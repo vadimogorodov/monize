@@ -6,8 +6,6 @@ import { withUserContext } from "@/common/db/with-context";
 import { McpTransactionsTools } from "@/mcp/tools/transactions.tool";
 import { mcpTestCtx } from "@/mcp/testing/mcp-test-context";
 import { PayeesService } from "@/payees/payees.service";
-import { TransactionsModule } from "@/transactions/transactions.module";
-import { TransactionsService } from "@/transactions/transactions.service";
 import { SharedReviewService } from "@/shared-expenses/shared-review.service";
 import { Transaction } from "@/transactions/entities/transaction.entity";
 import { TransactionSplit } from "@/transactions/entities/transaction-split.entity";
