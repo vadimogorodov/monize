@@ -1,3 +1,4 @@
+import { assetValueChangeExclusionSql } from "../common/asset-value-change-filter.util";
 import {
   investmentExclusionSql,
   reportableTransactionAmountSql,
@@ -30,12 +31,7 @@ export function purchaseRowConditionsSql(
         AND (t.status IS NULL OR t.status != 'VOID')
         AND t.parent_transaction_id IS NULL
         AND ${investmentExclusion}
-        AND NOT EXISTS (
-          SELECT 1 FROM accounts ax
-          WHERE ax.user_id = t.user_id
-            AND ax.asset_category_id IS NOT NULL
-            AND ax.asset_category_id = t.category_id
-        )`;
+        AND ${assetValueChangeExclusionSql("t")}`;
 }
 
 /** The same predicate for a read outside the report services: the trivia rows. */

@@ -1,3 +1,4 @@
+import { assetValueChangeExclusionSql } from "../common/asset-value-change-filter.util";
 import { Injectable } from "@nestjs/common";
 import { isIncomeCategory } from "../categories/category-type.util";
 import { DataSource } from "typeorm";
@@ -267,12 +268,7 @@ export class MonthlyCategoryBreakdownService {
         AND t.parent_transaction_id IS NULL
         AND ${INVESTMENT_EXCLUSION}
         AND (ts.transfer_account_id IS NULL OR ts.id IS NULL)
-        AND NOT EXISTS (
-          SELECT 1 FROM accounts ax
-          WHERE ax.user_id = t.user_id
-            AND ax.asset_category_id IS NOT NULL
-            AND ax.asset_category_id = COALESCE(ts.category_id, t.category_id)
-        )
+        AND ${assetValueChangeExclusionSql("t", "ts")}
     `;
 
     const params: (string | string[] | undefined)[] = [
