@@ -300,12 +300,12 @@ describe("IncomeVsExpensesReport", () => {
     fireEvent.click(screen.getByTestId("bar-Expenses"));
     const register = `/transactions?startDate=${expectedStart}&endDate=${expectedEnd}`;
     expect(mockPush.mock.calls).toEqual([
-      [`${register}&categoryType=income`],
-      [`${register}&categoryType=expense`],
+      [`${register}&reportSide=income`],
+      [`${register}&reportSide=expense`],
     ]);
   });
 
-  it("does not include categoryType when clicking Savings bar", async () => {
+  it("does not include reportSide when clicking Savings bar", async () => {
     mockGetIncomeVsExpenses.mockResolvedValue({
       data: [{ period: "2024-01", periodStart: "2024-01-01", periodEnd: "2024-01-31", income: 5000, expenses: 3000, net: 2000 }],
       totals: { income: 5000, expenses: 3000, net: 2000, knownIncome: 5000, knownExpenses: 3000, knownNet: 2000 },
@@ -315,7 +315,7 @@ describe("IncomeVsExpensesReport", () => {
       expect(screen.getByTestId("bar-Savings")).toBeInTheDocument();
     });
     fireEvent.click(screen.getByTestId("bar-Savings"));
-    // Savings bar has no categoryType onClick, so falls through to chart-level click (date only)
+    // Savings bar has no reportSide onClick, so falls through to chart-level click (date only)
     expect(mockPush).toHaveBeenCalledWith(
       "/transactions?startDate=2024-01-01&endDate=2024-01-31",
     );

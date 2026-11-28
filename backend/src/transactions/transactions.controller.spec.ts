@@ -1,3 +1,4 @@
+import { IncomeExpenseSide } from "../common/income-expense-posting";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import type { Response } from "express";
@@ -406,6 +407,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -443,6 +445,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -474,6 +477,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -517,6 +521,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -561,6 +566,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -607,6 +613,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -623,13 +630,13 @@ describe("TransactionsController", () => {
       const calls = mockService.findAll.mock.calls as unknown[][];
       const lastCall = calls[calls.length - 1];
       // hasAttachments sits before the trailing jointAccountIds and
-      // externalId args.
-      expect(lastCall[lastCall.length - 3]).toBe(true);
-      expect(lastCall[lastCall.length - 2]).toEqual([]);
-      expect(lastCall[lastCall.length - 1]).toBeUndefined();
+      // externalId and reportSide args.
+      expect(lastCall[lastCall.length - 4]).toBe(true);
+      expect(lastCall[lastCall.length - 3]).toEqual([]);
+      expect(lastCall[lastCall.length - 2]).toBeUndefined();
     });
 
-    // externalId is the last query param, after sortBy and sortDirection.
+    // externalId follows sortBy and sortDirection.
     const findAllWithExternalId = (externalId: unknown) =>
       (controller.findAll as (...a: unknown[]) => Promise<unknown>)(
         mockReq,
@@ -644,7 +651,34 @@ describe("TransactionsController", () => {
 
       const calls = mockService.findAll.mock.calls as unknown[][];
       const lastCall = calls[calls.length - 1];
-      expect(lastCall[lastCall.length - 1]).toBe(" bank-row-1 ");
+      expect(lastCall[lastCall.length - 2]).toBe(" bank-row-1 ");
+    });
+
+    it("keeps a bar click on the report owner's ledger, including its monthly totals", async () => {
+      const side = IncomeExpenseSide.Income;
+      const args: Parameters<TransactionsController["findAll"]> = [mockReq];
+      args[26] = side;
+      await controller.findAll(...args);
+      expect(mockJointAccounts.jointAccountIdSetFor).not.toHaveBeenCalled();
+      expect(mockService.findAll.mock.calls[0].slice(-1)).toEqual([side]);
+
+      await controller.getMonthlyTotals(
+        mockReq,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        side,
+      );
+      expect(mockJointAccounts.jointAccountIdSetFor).not.toHaveBeenCalled();
+      expect(mockService.getMonthlyTotals.mock.calls[0].slice(-1)).toEqual([
+        side,
+      ]);
     });
 
     it("rejects an empty externalId rather than matching nothing", async () => {
@@ -845,6 +879,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -2203,6 +2238,7 @@ describe("TransactionsController", () => {
         undefined,
         [],
         undefined,
+        undefined, // reportSide
       );
     });
 
@@ -2419,6 +2455,7 @@ describe("TransactionsController", () => {
         1000,
         undefined,
         [],
+        undefined, // reportSide
       );
     });
 

@@ -1,4 +1,8 @@
 import {
+  IncomeExpenseSide,
+  registerIncomeExpensePosting,
+} from "../common/income-expense-posting";
+import {
   type CategoryHolder,
   categoryFits,
   transferCategoryRefusal,
@@ -1516,6 +1520,7 @@ export class TransactionAnalyticsService {
     amountTo?: number,
     tagIds?: string[],
     jointAccountIds?: string[],
+    reportSide?: IncomeExpenseSide,
   ): Promise<
     Array<{
       month: string;
@@ -1551,6 +1556,13 @@ export class TransactionAnalyticsService {
         tagIds,
         jointAccountIds,
       });
+
+      if (reportSide) {
+        queryBuilder.andWhere(
+          registerIncomeExpensePosting("transaction", "splits", reportSide),
+          { incomeExpenseOwner: userId },
+        );
+      }
 
       // The splits join is always present, so use the split amount for split
       // transactions (COALESCE falls back to the transaction amount for

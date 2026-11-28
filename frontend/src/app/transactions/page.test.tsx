@@ -1085,6 +1085,20 @@ describe('TransactionsPage', () => {
   });
 
   describe('Filter Panel', () => {
+    it.each(['income', 'expense'])('loads the %s bar postings until the report filter is cleared', async (side) => {
+      mockSearchParams.value = `reportSide=${side}&startDate=2025-09-01&endDate=2025-09-30`;
+      try {
+        await act(async () => { render(<TransactionsPage />); });
+        const dates = { startDate: '2025-09-01', endDate: '2025-09-30' };
+        await waitFor(() => expect(mockGetAll).toHaveBeenCalledWith(expect.objectContaining({ ...dates, reportSide: side })));
+        expect(mockGetMonthlyTotals).toHaveBeenCalledWith(expect.objectContaining({ ...dates, reportSide: side }));
+        await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Clear$/ })); });
+        await waitFor(() => expect(mockGetAll).toHaveBeenLastCalledWith(expect.objectContaining({ ...dates, reportSide: undefined })));
+      } finally {
+        mockSearchParams.value = '';
+      }
+    });
+
     it('renders the filter panel', async () => {
       render(<TransactionsPage />);
       await waitFor(() => {
@@ -2334,6 +2348,22 @@ describe('TransactionsPage', () => {
         expect(mockGetById).toHaveBeenCalledWith('tx-split');
         expect(mockTxOpenEdit).toHaveBeenCalledWith(fullSplitTx);
       });
+    });
+
+    it('keeps a partial report split out of the edit form if the full transaction cannot load', async () => {
+      const { showErrorToast } = await import('@/lib/errors');
+      mockSearchParams.value = 'reportSide=income';
+      const splitTx = { ...mockTransactions[0], id: 'tx-partial', isSplit: true };
+      mockGetAll.mockResolvedValue({ data: [splitTx], pagination: { page: 1, totalPages: 1, total: 1 } });
+      mockGetById.mockRejectedValue(new Error('Failed to load split'));
+      try {
+        await act(async () => { render(<TransactionsPage />); });
+        await act(async () => { fireEvent.click(await screen.findByTestId('tx-tx-partial')); });
+        expect(mockTxOpenEdit).not.toHaveBeenCalled();
+        expect(showErrorToast).toHaveBeenCalledWith(expect.any(Error), 'Failed to load form data');
+      } finally {
+        mockSearchParams.value = '';
+      }
     });
 
     it('falls back to filtered transaction if getById fails for split transaction', async () => {

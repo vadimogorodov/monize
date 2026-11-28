@@ -1,3 +1,7 @@
+import {
+  IncomeExpenseSide,
+  registerIncomeExpensePosting,
+} from "../common/income-expense-posting";
 import { createBondWriteGuard } from "../bonds/bond-write-guard";
 import {
   attachRegisterReportingRates,
@@ -257,6 +261,7 @@ export interface TransactionWithInvestmentLink
  * `buildFilteredIdsSubquery` too.
  */
 export interface RegisterRowFilters {
+  reportSide: IncomeExpenseSide | undefined;
   startDate: string | undefined;
   endDate: string | undefined;
   categoryIds: string[] | undefined;
@@ -306,12 +311,14 @@ function hasRegisterContentFilters(
       filters.originalCurrencyCodes.length > 0) ||
     filters?.hasAttachments !== undefined ||
     filters?.tagKeyFilter ||
+    filters?.reportSide !== undefined ||
     filters?.externalId !== undefined
   );
 }
 
 /** The register's filters as the export reads them (the paged list's, unparsed). */
 export interface RegisterExportListing {
+  reportSide?: IncomeExpenseSide;
   accountIds?: string[];
   startDate?: string;
   endDate?: string;
@@ -2068,6 +2075,7 @@ export class TransactionsService {
     hasAttachments?: boolean,
     jointAccountIds: string[] = [],
     externalId?: string,
+    reportSide?: IncomeExpenseSide,
   ): Promise<PaginatedTransactions> {
     // A page number for one row is counted by comparing that row against the
     // register's order, and only the date order has a comparison to make here
@@ -2098,6 +2106,7 @@ export class TransactionsService {
     // link lands on nor any of the three balance regimes can be handed a
     // narrower set of rows than the listing itself used.
     const rowFilters: RegisterRowFilters = {
+      reportSide,
       startDate,
       endDate,
       categoryIds,
@@ -2296,6 +2305,17 @@ export class TransactionsService {
       category: "category",
     });
 
+    if (filters.reportSide) {
+      queryBuilder.andWhere(
+        registerIncomeExpensePosting(
+          "transaction",
+          "splits",
+          filters.reportSide,
+        ),
+        { incomeExpenseOwner: userId },
+      );
+    }
+
     if (!includeInvestmentBrokerage) {
       queryBuilder.andWhere(brokerageExclusionForEntity("account"));
     }
@@ -2446,6 +2466,7 @@ export class TransactionsService {
         hasAttachments: listing.hasAttachments,
         tagKeyFilter: listing.tagKeyFilter,
         externalId: listing.externalId,
+        reportSide: listing.reportSide,
         includeInvestmentBrokerage: listing.includeInvestmentBrokerage,
       };
       const queryBuilder = await this.buildRegisterListingQuery(
@@ -3078,6 +3099,7 @@ export class TransactionsService {
     const hasTransferCategory = !!filters.categoryIds?.includes("transfer");
 
     if (
+      !filters.reportSide &&
       !hasRegularCategories &&
       !hasTags &&
       !hasUncategorized &&
@@ -3105,6 +3127,18 @@ export class TransactionsService {
     );
 
     sumQb.leftJoin("sa.splits", "saSplits");
+    if (filters.reportSide) {
+      sumQb.andWhere(
+        registerIncomeExpensePosting("sa", "saSplits", filters.reportSide),
+        { incomeExpenseOwner: userId },
+      );
+      applyParsedSearch(sumQb, filters.search, {
+        transaction: "sa",
+        splits: "saSplits",
+        grain: "split",
+        paramPrefix: "saReportSearch",
+      });
+    }
 
     // The category filter's arms are alternatives to each other, exactly as
     // they are in the listing and in `buildFilteredIdsSubquery`: a filter of
@@ -3303,6 +3337,7 @@ export class TransactionsService {
     // and the uncategorised pseudo-category, whose listing arm asks about a
     // split parent's children).
     const needsSplitsJoin = !!(
+      filters.reportSide ||
       searchNarrows(filters.search) ||
       (filters.categoryIds && filters.categoryIds.length > 0) ||
       (filters.tagIds && filters.tagIds.length > 0)
@@ -3310,6 +3345,12 @@ export class TransactionsService {
 
     if (needsSplitsJoin) {
       qb.leftJoin("bf.splits", "bfSplits");
+    }
+    if (filters.reportSide) {
+      qb.andWhere(
+        registerIncomeExpensePosting("bf", "bfSplits", filters.reportSide),
+        { incomeExpenseOwner: userId },
+      );
     }
 
     // The same terms and grain as the listing, under this subquery's own
@@ -5005,6 +5046,7 @@ export class TransactionsService {
     amountTo?: number,
     tagIds?: string[],
     jointAccountIds?: string[],
+    reportSide?: IncomeExpenseSide,
   ) {
     return this.analyticsService.getMonthlyTotals(
       userId,
@@ -5018,6 +5060,7 @@ export class TransactionsService {
       amountTo,
       tagIds,
       jointAccountIds,
+      reportSide,
     );
   }
 

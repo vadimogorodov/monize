@@ -257,6 +257,19 @@ describe('useTransactionFilters - URL/localStorage initialization', () => {
     hasAttachments: '',
   } as Parameters<ReturnType<typeof useTransactionFilters>['updateUrl']>[1];
 
+  it.each(['income', 'expense'])('retains the %s report side when paging and clears it with the filters', (side) => {
+    mockSearchParams = new URLSearchParams({ reportSide: side, startDate: '2025-09-01' });
+    const { result } = renderHook(() => useTransactionFilters(defaultOptions));
+    expect(result.current.reportSide).toBe(side);
+    expect(result.current.filterCategoryIds).toEqual([]);
+    act(() => result.current.updateUrl(2, FILTERS));
+    const url = new URL(mockReplace.mock.calls.at(-1)?.[0], 'http://localhost');
+    expect(url.searchParams.get('reportSide')).toBe(side);
+    expect(url.searchParams.get('page')).toBe('2');
+    act(() => result.current.clearFilters());
+    expect(result.current.reportSide).toBeUndefined();
+  });
+
   it('keeps a link-applied Show Accounts in the rewritten URL, so a reload still honours it', () => {
     mockReplace.mockClear();
     localStorage.setItem('transactions.filter.accountStatus', JSON.stringify('active'));

@@ -1,3 +1,4 @@
+import { IncomeExpenseSide } from "../common/income-expense-posting";
 import {
   applyDecorators,
   Controller,
@@ -14,6 +15,7 @@ import {
   Query,
   ParseUUIDPipe,
   ParseBoolPipe,
+  ParseEnumPipe,
   BadRequestException,
   HttpStatus,
   Res,
@@ -194,6 +196,7 @@ function parseTransactionStatuses(
 
 /** The register's filter query parameters, as they arrive. */
 interface RawRegisterFilters {
+  reportSide?: IncomeExpenseSide;
   accountId?: string;
   accountIds?: string;
   startDate?: string;
@@ -220,6 +223,7 @@ interface RawRegisterFilters {
 
 /** The register's filters parsed, with the scope the query runs in. */
 interface RegisterListing {
+  reportSide?: IncomeExpenseSide;
   userId: string;
   accountIds?: string[];
   startDate?: string;
@@ -344,6 +348,12 @@ function RegisterFilterApiQueries() {
       name: "sortDirection",
       required: false,
       description: "Sort direction: asc or desc (default: desc)",
+    }),
+    ApiQuery({
+      name: "reportSide",
+      required: false,
+      enum: IncomeExpenseSide,
+      description: "Contributing postings from the Income vs Expenses bar",
     }),
     ApiQuery({
       name: "externalId",
@@ -537,6 +547,11 @@ export class TransactionsController {
     @Query("sortBy") sortBy?: string,
     @Query("sortDirection") sortDirection?: string,
     @Query("externalId") externalId?: string,
+    @Query(
+      "reportSide",
+      new ParseEnumPipe(IncomeExpenseSide, { optional: true }),
+    )
+    reportSide?: IncomeExpenseSide,
   ) {
     // Validate pagination parameters
     if (page !== undefined) {
@@ -601,6 +616,7 @@ export class TransactionsController {
       sortBy,
       sortDirection,
       externalId,
+      reportSide,
     });
     if (listing === null) {
       const safeLimit = limit ? parseInt(limit, 10) : 50;
@@ -665,6 +681,11 @@ export class TransactionsController {
     @Query("sortBy") sortBy?: string,
     @Query("sortDirection") sortDirection?: string,
     @Query("externalId") externalId?: string,
+    @Query(
+      "reportSide",
+      new ParseEnumPipe(IncomeExpenseSide, { optional: true }),
+    )
+    reportSide?: IncomeExpenseSide,
   ): Promise<{ data: TransactionExportRow[] }> {
     const listing = await this.resolveRegisterListing(req, {
       accountId,
@@ -689,6 +710,7 @@ export class TransactionsController {
       sortBy,
       sortDirection,
       externalId,
+      reportSide,
     });
     if (listing === null) return { data: [] };
 
@@ -788,8 +810,8 @@ export class TransactionsController {
           ? effectiveAccountIds.filter((id) => readableSet.has(id))
           : readable;
       if (effectiveAccountIds.length === 0) return null;
-    } else {
-      // Own context: joint accounts read natively (joint-accounts spec).
+    } else if (!raw.reportSide) {
+      // The report reads the owner ledger. The ordinary register also includes joint accounts.
       const scope = await this.resolveOwnContextJointScope(
         req,
         effectiveAccountIds,
@@ -818,6 +840,7 @@ export class TransactionsController {
       hasAttachments: raw.hasAttachments,
       jointAccountIds,
       externalId: externalIdFilter,
+      reportSide: raw.reportSide,
     };
   }
 
@@ -850,6 +873,7 @@ export class TransactionsController {
       listing.hasAttachments,
       listing.jointAccountIds,
       listing.externalId,
+      listing.reportSide,
     );
   }
 
@@ -1386,6 +1410,7 @@ export class TransactionsController {
     description: "Monthly totals retrieved successfully",
   })
   @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiQuery({ name: "reportSide", required: false, enum: IncomeExpenseSide })
   @AllowDelegate()
   async getMonthlyTotals(
     @Request() req,
@@ -1398,6 +1423,11 @@ export class TransactionsController {
     @Query("amountFrom") amountFrom?: string,
     @Query("amountTo") amountTo?: string,
     @Query("tagIds") tagIdsParam?: string,
+    @Query(
+      "reportSide",
+      new ParseEnumPipe(IncomeExpenseSide, { optional: true }),
+    )
+    reportSide?: IncomeExpenseSide,
   ) {
     validateDateParam(startDate, "startDate");
     validateDateParam(endDate, "endDate");
@@ -1439,7 +1469,7 @@ export class TransactionsController {
           ? effectiveAccountIds.filter((id) => readableSet.has(id))
           : readable;
       if (effectiveAccountIds.length === 0) return [];
-    } else {
+    } else if (!reportSide) {
       // Own context: a jointly shared account's cash flow reads the same rows
       // its register does.
       const scope = await this.resolveOwnContextJointScope(
@@ -1462,6 +1492,7 @@ export class TransactionsController {
       parsedAmountTo,
       parseUuids(tagIdsParam),
       jointAccountIds,
+      reportSide,
     );
   }
 

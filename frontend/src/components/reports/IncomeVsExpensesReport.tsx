@@ -423,7 +423,7 @@ export function IncomeVsExpensesReport() {
 
   const barClickedRef = useRef(false);
 
-  const handleBarClick = (categoryType: 'income' | 'expense') => (data: { payload?: { monthStart?: string; monthEnd?: string } }) => {
+  const handleBarClick = (reportSide: 'income' | 'expense') => (data: { payload?: { monthStart?: string; monthEnd?: string } }) => {
     barClickedRef.current = true;
     const monthStart = data.payload?.monthStart;
     const monthEnd = data.payload?.monthEnd;
@@ -432,7 +432,7 @@ export function IncomeVsExpensesReport() {
     const from = rangeStart > monthStart ? rangeStart : monthStart;
     const to = rangeEnd && rangeEnd < monthEnd ? rangeEnd : monthEnd;
     if (from <= to) {
-      router.push(`/transactions?startDate=${from}&endDate=${to}&categoryType=${categoryType}`);
+      router.push(`/transactions?startDate=${from}&endDate=${to}&reportSide=${reportSide}`);
     }
   };
 

@@ -71,7 +71,10 @@ function buildFilterParams(params?: {
   return result;
 }
 
+export type IncomeExpenseSide = 'income' | 'expense';
+
 export interface TransactionsGetAllParams {
+  reportSide?: IncomeExpenseSide;
   accountId?: string;
   accountIds?: string[];
   startDate?: string;
@@ -117,6 +120,7 @@ export type TransactionsRegisterFilterParams = Omit<
 function buildRegisterFilterParams(params?: TransactionsRegisterFilterParams) {
   return {
     ...buildFilterParams(params),
+    reportSide: params?.reportSide,
     startDate: params?.startDate,
     endDate: params?.endDate,
     search: params?.search,
@@ -422,6 +426,7 @@ export const transactionsApi = {
 
   // Get monthly transaction totals (for category/payee bar chart)
   getMonthlyTotals: async (params?: {
+    reportSide?: IncomeExpenseSide;
     accountIds?: string[];
     startDate?: string;
     endDate?: string;
@@ -434,6 +439,7 @@ export const transactionsApi = {
   }): Promise<MonthlyTotal[]> => {
     const apiParams = {
       ...buildFilterParams(params),
+      reportSide: params?.reportSide,
       startDate: params?.startDate,
       endDate: params?.endDate,
       search: params?.search,

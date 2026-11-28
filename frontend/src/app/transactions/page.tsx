@@ -159,6 +159,7 @@ export default function TransactionsPage() {
 function TransactionsContent() {
   const t = useTranslations('transactions');
   const tc = useTranslations('common');
+  const tr = useTranslations('reports');
   const ta = useTranslations('accountDetail');
   const router = useRouter();
   const { formatDate } = useDateFormat();
@@ -298,6 +299,7 @@ function TransactionsContent() {
   const calendarFilters = useMemo(
     () => ({
       accountIds: accountIdsForQuery,
+      reportSide: filters.reportSide,
       categoryIds: filters.filterCategoryIds.length > 0 ? filters.filterCategoryIds : undefined,
       payeeIds: filters.filterPayeeIds.length > 0 ? filters.filterPayeeIds : undefined,
       tagIds: filters.filterTagIds.length > 0 ? filters.filterTagIds : undefined,
@@ -319,6 +321,7 @@ function TransactionsContent() {
     }),
     [
       accountIdsForQuery,
+      filters.reportSide,
       filters.filterCategoryIds,
       filters.filterPayeeIds,
       filters.filterTagIds,
@@ -552,7 +555,7 @@ function TransactionsContent() {
           setSort(effectiveSort);
         }
 
-        const hasCategoryOrPayeeFilter = filters.filterCategoryIds.length > 0 || filters.filterPayeeIds.length > 0 || filters.filterTagIds.length > 0 || filters.filterSearch.length > 0;
+        const hasCategoryOrPayeeFilter = !!filters.reportSide || filters.filterCategoryIds.length > 0 || filters.filterPayeeIds.length > 0 || filters.filterTagIds.length > 0 || filters.filterSearch.length > 0;
 
         const chartParams: { startDate?: string; endDate?: string; accountIds?: string; allTime?: boolean } = {};
         if (filters.filterStartDate) chartParams.startDate = filters.filterStartDate;
@@ -574,6 +577,7 @@ function TransactionsContent() {
         let chartFailed = false;
         const chartPromise = hasCategoryOrPayeeFilter
           ? transactionsApi.getMonthlyTotals({
+              reportSide: filters.reportSide,
               accountIds: accountIdsForQuery,
               startDate: filters.filterStartDate || undefined,
               endDate: filters.filterEndDate || undefined,
@@ -597,6 +601,7 @@ function TransactionsContent() {
         const requestedSearch = filters.filterSearch;
         const [transactionsResponse, chartResult] = await Promise.all([
           transactionsApi.getAll({
+            reportSide: filters.reportSide,
             accountIds: accountIdsForQuery,
             startDate: filters.filterStartDate || undefined,
             endDate: filters.filterEndDate || undefined,
@@ -932,57 +937,45 @@ function TransactionsContent() {
     openCreate();
   };
 
+  // A bar lists just the contributing split lines. Forms need the whole split.
+  const transactionForForm = async (row: Transaction): Promise<Transaction | null> => {
+    if (!row.isSplit && !row.isTransfer) return row;
+    try {
+      return await transactionsApi.getById(row.id);
+    } catch (error) {
+      logger.error('Failed to load transaction details:', error);
+      if (filters.reportSide && row.isSplit) {
+        showErrorToast(error, t('toasts.loadFormDataFailed'));
+        return null;
+      }
+      return row;
+    }
+  };
+
   const handleEdit = async (transaction: Transaction) => {
     if (transaction.linkedInvestmentTransactionId) {
       toast(t('page.toasts.investmentLinked'));
       router.push(`/investments?edit=${transaction.linkedInvestmentTransactionId}`);
       return;
     }
-    if (transaction.isTransfer || transaction.isSplit) {
-      try {
-        const fullTransaction = await transactionsApi.getById(transaction.id);
-        // The register row's warranty count is a list-only field; the form's
-        // Warranties line reads it to decide whether to fetch the list.
-        openEdit({ ...fullTransaction, warrantyCount: transaction.warrantyCount });
-      } catch (error) {
-        logger.error('Failed to load transaction details:', error);
-        openEdit(transaction);
-      }
-    } else {
-      openEdit(transaction);
-    }
+    const full = await transactionForForm(transaction);
+    if (full) openEdit({ ...full, warrantyCount: transaction.warrantyCount });
   };
 
   const handleDuplicate = async (transaction: Transaction) => {
     if (transaction.linkedInvestmentTransactionId) return;
-    if (transaction.isTransfer || transaction.isSplit) {
-      try {
-        const fullTransaction = await transactionsApi.getById(transaction.id);
-        setDuplicatingFrom(fullTransaction);
-      } catch (error) {
-        logger.error('Failed to load transaction details for duplication:', error);
-        setDuplicatingFrom(transaction);
-      }
-    } else {
-      setDuplicatingFrom(transaction);
-    }
+    const full = await transactionForForm(transaction);
+    if (!full) return;
+    setDuplicatingFrom(full);
     setFormDraft(null);
     openCreate();
   };
 
   const handleScheduleRecurring = async (transaction: Transaction) => {
     if (transaction.linkedInvestmentTransactionId) return;
-    if (transaction.isTransfer || transaction.isSplit) {
-      try {
-        const fullTransaction = await transactionsApi.getById(transaction.id);
-        setSchedulingFrom(fullTransaction);
-      } catch (error) {
-        logger.error('Failed to load transaction details for scheduling:', error);
-        setSchedulingFrom(transaction);
-      }
-    } else {
-      setSchedulingFrom(transaction);
-    }
+    const full = await transactionForForm(transaction);
+    if (!full) return;
+    setSchedulingFrom(full);
     setShowScheduleForm(true);
   };
 
@@ -1551,6 +1544,7 @@ function TransactionsContent() {
       const parsedAmountTo = filters.filterAmountTo ? parseFloat(filters.filterAmountTo) : undefined;
 
       const queryParams = {
+        reportSide: filters.reportSide,
         accountIds: accountIdsForQuery,
         startDate: filters.filterStartDate || undefined,
         endDate: filters.filterEndDate || undefined,
@@ -1646,7 +1640,7 @@ function TransactionsContent() {
     } finally {
       setIsExporting(false);
     }
-  }, [accountIdsForQuery, filters.filterCategoryIds, filters.filterPayeeIds, filters.filterTagIds, filters.filterStartDate, filters.filterEndDate, filters.filterSearch, filters.filterAmountFrom, filters.filterAmountTo, filters.filterStatuses, filters.filterOriginalCurrencyCodes, filters.filterHasAttachments, t]);
+  }, [accountIdsForQuery, filters.reportSide, filters.filterCategoryIds, filters.filterPayeeIds, filters.filterTagIds, filters.filterStartDate, filters.filterEndDate, filters.filterSearch, filters.filterAmountFrom, filters.filterAmountTo, filters.filterStatuses, filters.filterOriginalCurrencyCodes, filters.filterHasAttachments, t]);
 
   return (
     <PageLayout>
@@ -1725,7 +1719,7 @@ function TransactionsContent() {
           // the strip in the chart's place.
           if (chartCollapsed && retainedWidget?.kind !== 'account') return strip;
           const chartKind =
-            filters.filterCategoryIds.length > 0 || filters.filterPayeeIds.length > 0 || filters.filterTagIds.length > 0 || filters.filterSearch.length > 0
+            filters.reportSide || filters.filterCategoryIds.length > 0 || filters.filterPayeeIds.length > 0 || filters.filterTagIds.length > 0 || filters.filterSearch.length > 0
               ? 'monthlyTotals'
               : accountBalances.length > 1
                 ? 'accountBalances'
@@ -1995,6 +1989,14 @@ function TransactionsContent() {
           </Modal>
         )}
 
+        {filters.reportSide && (
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <span>{tr('page.names.income-vs-expenses')} · {tr(filters.reportSide === 'income' ? 'incomeVsExpenses.colIncome' : 'incomeVsExpenses.colExpenses')}</span>
+            <button type="button" className="underline" onClick={() => { filters.setCurrentPage(1); filters.setReportSide(undefined); }}>
+              {tc('multiSelect.clear')}
+            </button>
+          </div>
+        )}
         <TransactionFilterPanel
           filterAccountIds={filters.filterAccountIds}
           filterCategoryIds={filters.filterCategoryIds}

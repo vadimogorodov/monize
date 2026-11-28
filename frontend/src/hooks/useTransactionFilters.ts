@@ -172,6 +172,11 @@ function getStoredValue<T>(key: string, defaultValue: T): T {
   }
 }
 
+function reportSideFromLink(params: Pick<URLSearchParams, 'get'>) {
+  const side = params.get('reportSide');
+  return side === 'income' || side === 'expense' ? side : undefined;
+}
+
 interface UseTransactionFiltersOptions {
   accounts: Account[];
   categories: Category[];
@@ -215,6 +220,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     const query = params.toString();
     router.replace(query ? `/transactions?${query}` : '/transactions', { scroll: false });
   }, [router]);
+  const [reportSide, setReportSide] = useState(() => reportSideFromLink(searchParams));
   const [rawFilterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
   // What the user ticked, with any whole type collapsed to its pseudo-id. Every
   // reader (the requests, the URL, localStorage, the chips, the picker) sees
@@ -287,6 +293,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     hasAttachments: HasAttachmentsFilter;
   }, push: boolean = false) => {
     const params = new URLSearchParams();
+    if (reportSide) params.set('reportSide', reportSide);
     if (page > 1) params.set('page', page.toString());
     if (linkedAccountStatus.current !== null) {
       params.set('accountStatus', linkedAccountStatus.current || 'all');
@@ -326,7 +333,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     } else {
       router.replace(newUrl, { scroll: false });
     }
-  }, [router]);
+  }, [router, reportSide]);
 
   // Get display info for selected filters
   const categoryFilterLabels = useCategoryFilterLabels();
@@ -437,7 +444,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
 
   // Calculate active filter count
   const activeFilterCount = useMemo(() => {
-    let count = 0;
+    let count = reportSide ? 1 : 0;
     count += filterAccountIds.length;
     count += filterCategoryIds.length;
     count += filterPayeeIds.length;
@@ -452,7 +459,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     if (filterTagKey) count++;
     if (filterHasAttachments) count++;
     return count;
-  }, [filterAccountIds, filterCategoryIds, filterPayeeIds, filterTagIds, filterStatuses, filterOriginalCurrencyCodes, filterStartDate, filterEndDate, filterSearch, filterAmountFrom, filterAmountTo, filterTagKey, filterHasAttachments]);
+  }, [reportSide, filterAccountIds, filterCategoryIds, filterPayeeIds, filterTagIds, filterStatuses, filterOriginalCurrencyCodes, filterStartDate, filterEndDate, filterSearch, filterAmountFrom, filterAmountTo, filterTagKey, filterHasAttachments]);
 
   // Auto-collapse filters when there are active filters, expand when none
   useEffect(() => {
@@ -469,6 +476,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
       searchParams.has('accountStatus') ||
       searchParams.has('categoryId') ||
       searchParams.has('categoryIds') ||
+      searchParams.has('reportSide') ||
       searchParams.has('categoryType') ||
       searchParams.has('payeeId') ||
       searchParams.has('payeeIds') ||
@@ -583,6 +591,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     // eslint-disable-next-line react-hooks/set-state-in-effect -- apply deep link from URL
     if (targetAccountStatus !== null) applyLinkedAccountStatus(targetAccountStatus);
     setFilterAccountIds([]);
+    setReportSide(undefined);
     setFilterCategoryIds([]);
     setFilterPayeeIds([]);
     setFilterTagIds([]);
@@ -648,6 +657,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     if (!isSpecialCategory && !isUuid(entity.id)) return;
 
     setFilterAccountIds(entity.kind === 'account' ? [entity.id] : []);
+    setReportSide(undefined);
     setFilterCategoryIds(entity.kind === 'category' ? [entity.id] : []);
     setFilterPayeeIds(entity.kind === 'payee' ? [entity.id] : []);
     // Deep links to accounts carry `accountStatus` (e.g. `all`) so a closed
@@ -746,6 +756,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
       isFilterChange.current = true;
       setFilterAccountIds([]);
       setFilterAccountStatus('');
+      setReportSide(undefined);
       setFilterCategoryIds([]);
       setFilterPayeeIds([]);
       setFilterTagIds([]);
@@ -774,6 +785,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     const handlePopstate = () => {
       const params = new URLSearchParams(window.location.search);
       syncingFromPopstateRef.current = true;
+      setReportSide(reportSideFromLink(params));
 
       setFilterAccountIds(params.get('accountIds')?.split(',').filter(Boolean) || []);
       setFilterCategoryIds(params.get('categoryIds')?.split(',').filter(Boolean) || []);
@@ -848,6 +860,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
   const clearFilters = useCallback(() => {
     setCurrentPage(1);
     setFilterAccountIds([]);
+    setReportSide(undefined);
     setFilterCategoryIds([]);
     setFilterPayeeIds([]);
     setFilterTagIds([]);
@@ -896,6 +909,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     currentPage, setCurrentPage,
 
     // Filter state
+    reportSide, setReportSide,
     filterAccountIds, setFilterAccountIds,
     filterAccountStatus, setFilterAccountStatus,
     filterCategoryIds, setFilterCategoryIds,

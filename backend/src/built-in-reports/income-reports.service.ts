@@ -1,3 +1,8 @@
+import {
+  IncomeExpenseSide,
+  matchesIncomeExpenseSide,
+  incomeExpensePostingScope,
+} from "../common/income-expense-posting";
 import { Injectable } from "@nestjs/common";
 import { categoryTypeIs } from "../categories/category-type.util";
 import { DataSource } from "typeorm";
@@ -400,37 +405,16 @@ export class IncomeReportsService {
         ${bucketStart} as period_start,
         t.currency_code,
         ${rateBasisColumnsSql(currencyParam)},
-        SUM(CASE
-          WHEN ${categoryTypeIs("c", "income")} THEN COALESCE(ts.amount, t.amount)
-          WHEN ${categoryTypeIs("c", "expense")} THEN 0
-          WHEN ${categoryTypeIs("c", "transfer")} THEN 0
-          WHEN COALESCE(ts.amount, t.amount) > 0 THEN COALESCE(ts.amount, t.amount)
-          ELSE 0
-        END) as income,
-        SUM(CASE
-          WHEN ${categoryTypeIs("c", "expense")} THEN -1 * COALESCE(ts.amount, t.amount)
-          WHEN ${categoryTypeIs("c", "income")} THEN 0
-          WHEN ${categoryTypeIs("c", "transfer")} THEN 0
-          WHEN COALESCE(ts.amount, t.amount) < 0 THEN ABS(COALESCE(ts.amount, t.amount))
-          ELSE 0
-        END) as expenses
+        SUM(CASE WHEN ${matchesIncomeExpenseSide("c", "COALESCE(ts.amount, t.amount)", IncomeExpenseSide.Income)} THEN COALESCE(ts.amount, t.amount) ELSE 0 END) as income,
+        SUM(CASE WHEN ${matchesIncomeExpenseSide("c", "COALESCE(ts.amount, t.amount)", IncomeExpenseSide.Expense)} THEN -COALESCE(ts.amount, t.amount) ELSE 0 END) as expenses
       FROM transactions t
       LEFT JOIN transaction_splits ts ON ts.transaction_id = t.id
       LEFT JOIN categories c ON c.id = COALESCE(ts.category_id, t.category_id)
       LEFT JOIN accounts a ON a.id = t.account_id
       WHERE t.user_id = $1
         AND t.transaction_date <= $2
-        AND t.is_transfer = false
-        AND (t.status IS NULL OR t.status != 'VOID')
-        AND t.parent_transaction_id IS NULL
         AND ${INVESTMENT_EXCLUSION}
-        AND (ts.transfer_account_id IS NULL OR ts.id IS NULL)
-        AND NOT EXISTS (
-          SELECT 1 FROM accounts ax
-          WHERE ax.user_id = t.user_id
-            AND ax.asset_category_id IS NOT NULL
-            AND ax.asset_category_id = COALESCE(ts.category_id, t.category_id)
-        )
+        AND ${incomeExpensePostingScope("t", "ts")}
     `;
 
     if (startDate) {
@@ -700,20 +684,8 @@ export class IncomeReportsService {
           ${valueBucketStart} as period_start,
           t.currency_code,
           ${rateBasisColumnsSql(valueCurrencyParam)},
-          CASE
-            WHEN ${categoryTypeIs("c", "income")} THEN COALESCE(ts.amount, t.amount)
-            WHEN ${categoryTypeIs("c", "expense")} THEN 0
-          WHEN ${categoryTypeIs("c", "transfer")} THEN 0
-            WHEN COALESCE(ts.amount, t.amount) > 0 THEN COALESCE(ts.amount, t.amount)
-            ELSE 0
-          END as income,
-          CASE
-            WHEN ${categoryTypeIs("c", "expense")} THEN -1 * COALESCE(ts.amount, t.amount)
-            WHEN ${categoryTypeIs("c", "income")} THEN 0
-          WHEN ${categoryTypeIs("c", "transfer")} THEN 0
-            WHEN COALESCE(ts.amount, t.amount) < 0 THEN ABS(COALESCE(ts.amount, t.amount))
-            ELSE 0
-          END as expenses,
+          CASE WHEN ${matchesIncomeExpenseSide("c", "COALESCE(ts.amount, t.amount)", IncomeExpenseSide.Income)} THEN COALESCE(ts.amount, t.amount) ELSE 0 END as income,
+          CASE WHEN ${matchesIncomeExpenseSide("c", "COALESCE(ts.amount, t.amount)", IncomeExpenseSide.Expense)} THEN -COALESCE(ts.amount, t.amount) ELSE 0 END as expenses,
           ${tagValuesArrayExpr("t", "ts", valueKeyParam)} as tag_values
         FROM transactions t
         LEFT JOIN transaction_splits ts ON ts.transaction_id = t.id
@@ -721,17 +693,8 @@ export class IncomeReportsService {
         LEFT JOIN accounts a ON a.id = t.account_id
         WHERE t.user_id = $1
           AND t.transaction_date <= $2
-          AND t.is_transfer = false
-          AND (t.status IS NULL OR t.status != 'VOID')
-          AND t.parent_transaction_id IS NULL
           AND ${INVESTMENT_EXCLUSION}
-          AND (ts.transfer_account_id IS NULL OR ts.id IS NULL)
-          AND NOT EXISTS (
-            SELECT 1 FROM accounts ax
-            WHERE ax.user_id = t.user_id
-              AND ax.asset_category_id IS NOT NULL
-              AND ax.asset_category_id = COALESCE(ts.category_id, t.category_id)
-          )
+        AND ${incomeExpensePostingScope("t", "ts")}
     `;
 
     if (startDate) {
