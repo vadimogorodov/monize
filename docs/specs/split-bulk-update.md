@@ -6,6 +6,25 @@ through the Transactions page bulk update tool and through the
 `backend/src/transactions/transaction-tool-prep.service.ts`). The invariants
 and truth tables below are the ones the code cites by name.
 
+## Selection from an Income vs Expenses bar
+
+The clicked bar supplies the posting side to the register. A category change from
+that view applies to the matching postings of the chosen rows, including when
+the reader selects all pages. Narrowing the register or deselecting a parent
+narrows the write. A missing category takes its side from the sign. A classified
+refund or reversal retains the side of its category.
+
+| Starting postings | Income selection | Expense selection |
+| --- | --- | --- |
+| Salary +40, reversal −7, purchase −30, refund +9, uncategorized +5 and −8 | +40, −7, +5 = 38 | −30, +9, −8 = −29 (bar 29) |
+| One split parent with uncategorized +5 and −8 | Set the category on +5 only | Set the category on −8 only |
+| Two +5 lines and a −8 line, search matches one +5 | Set the category on the matching +5 only | No matching payment |
+
+Verify both selection modes by reading stored categories and split parent
+amounts after the write. A category-only edit keeps amounts and balances intact.
+The ordinary category-type filter still yields +33 and −21 in the first case.
+[Maintainer decision](https://github.com/kenlasko/monize/discussions/2498#discussioncomment-19978570)
+
 ## Product decisions
 
 1. **Bulk category = recategorize matching lines.** When a bulk update sets a
