@@ -149,6 +149,7 @@ import {
 import { ParsedSearch } from "./transaction-search-query.util";
 import {
   buildTagKeyFilterClause,
+  parseTagKeyFilter,
   tagFilterExistsSql,
   TagKeyFilter,
 } from "./tag-key-filter.util";
@@ -2475,39 +2476,47 @@ export class TransactionsService {
     listing: RegisterExportListing,
   ): Promise<Transaction[]> {
     return withScopedDb(this.dataSource, async (m) => {
-      const parsedSearch = await resolveTransactionSearch(
-        m,
-        userId,
-        listing.search,
-      );
-      const rowFilters: RegisterRowFilters = {
-        startDate: listing.startDate,
-        endDate: listing.endDate,
-        categoryIds: listing.categoryIds,
-        payeeIds: listing.payeeIds,
-        tagIds: listing.tagIds,
-        search: parsedSearch,
-        amountFrom: listing.amountFrom,
-        amountTo: listing.amountTo,
-        statuses: listing.statuses,
-        originalCurrencyCodes: listing.originalCurrencyCodes,
-        hasAttachments: listing.hasAttachments,
-        tagKeyFilter: listing.tagKeyFilter,
-        externalId: listing.externalId,
-        reportSide: listing.reportSide,
-        includeInvestmentBrokerage: listing.includeInvestmentBrokerage,
-      };
-      const queryBuilder = await this.buildRegisterListingQuery(
-        m,
-        userId,
-        listing.accountIds,
-        rowFilters,
-        listing.jointAccountIds,
-        listing.sortBy,
-        listing.sortDirection,
-      );
+      const queryBuilder = await this.unpagedRegisterQuery(m, userId, listing);
       return queryBuilder.getMany();
     });
+  }
+
+  private async unpagedRegisterQuery(
+    m: EntityManager,
+    userId: string,
+    listing: RegisterExportListing,
+  ) {
+    const parsedSearch = await resolveTransactionSearch(
+      m,
+      userId,
+      listing.search,
+    );
+    const rowFilters: RegisterRowFilters = {
+      startDate: listing.startDate,
+      endDate: listing.endDate,
+      categoryIds: listing.categoryIds,
+      payeeIds: listing.payeeIds,
+      tagIds: listing.tagIds,
+      search: parsedSearch,
+      amountFrom: listing.amountFrom,
+      amountTo: listing.amountTo,
+      statuses: listing.statuses,
+      originalCurrencyCodes: listing.originalCurrencyCodes,
+      hasAttachments: listing.hasAttachments,
+      tagKeyFilter: listing.tagKeyFilter,
+      externalId: listing.externalId,
+      reportSide: listing.reportSide,
+      includeInvestmentBrokerage: listing.includeInvestmentBrokerage,
+    };
+    return this.buildRegisterListingQuery(
+      m,
+      userId,
+      listing.accountIds,
+      rowFilters,
+      listing.jointAccountIds,
+      listing.sortBy,
+      listing.sortDirection,
+    );
   }
 
   /**
@@ -5610,6 +5619,45 @@ export class TransactionsService {
     userId: string,
     bulkUpdateDto: BulkUpdateDto,
   ): Promise<BulkUpdateResult> {
+    const scope = bulkUpdateDto.reportCategoryScope;
+    if (scope) {
+      const filters = bulkUpdateDto.filters ?? {};
+      return this.bulkUpdateService.bulkUpdate(
+        userId,
+        bulkUpdateDto,
+        async (m) => {
+          const query = await this.unpagedRegisterQuery(m, userId, {
+            ...filters,
+            ...scope,
+            tagKeyFilter: parseTagKeyFilter(
+              scope.tagKey,
+              scope.tagKeyOp,
+              scope.tagKeyValue,
+            ),
+            includeInvestmentBrokerage: false,
+            jointAccountIds: [],
+            sortBy: "date",
+            sortDirection: "ASC",
+          });
+          if (bulkUpdateDto.mode === "ids") {
+            if (!bulkUpdateDto.transactionIds?.length) return [];
+            query.andWhere("transaction.id = ANY(:selectedIds)", {
+              selectedIds: bulkUpdateDto.transactionIds,
+            });
+          } else if (bulkUpdateDto.excludedIds?.length) {
+            query.andWhere("NOT (transaction.id = ANY(:excludedIds))", {
+              excludedIds: bulkUpdateDto.excludedIds,
+            });
+          }
+          return query
+            .orderBy()
+            .select("transaction.id", "transactionId")
+            .addSelect("splits.id", "splitId")
+            .distinct(true)
+            .getRawMany<{ transactionId: string; splitId: string | null }>();
+        },
+      );
+    }
     return this.bulkUpdateService.bulkUpdate(userId, bulkUpdateDto);
   }
 

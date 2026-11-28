@@ -2982,6 +2982,27 @@ describe('TransactionsPage', () => {
       });
     }
 
+    it.each(['ids', 'filter'] as const)('sends the report side and current filters for a category update in %s mode', async (mode) => {
+      mockSearchParams.value = 'reportSide=income&startDate=2025-09-01&endDate=2025-09-30&hasAttachments=yes';
+      mockBulkUpdate.mockResolvedValue({ updated: 1, skipped: 0, skippedReasons: [] });
+      try {
+        render(<TransactionsPage />);
+        await waitFor(() => expect(mockGetAll).toHaveBeenCalledWith(expect.objectContaining({ reportSide: 'income' })));
+        fireEvent.click(await screen.findByTestId('select-tx-1'));
+        if (mode === 'filter') fireEvent.click(await screen.findByTestId('select-all-matching'));
+        fireEvent.click(await screen.findByTestId('bulk-update-btn'));
+        const submit = await screen.findByTestId('bulk-modal-submit');
+        await act(async () => { fireEvent.click(submit); });
+        expect(mockBulkUpdate).toHaveBeenCalledWith(expect.objectContaining({
+          mode, categoryId: 'cat-1',
+          filters: expect.objectContaining({ startDate: '2025-09-01', endDate: '2025-09-30' }),
+          reportCategoryScope: expect.objectContaining({reportSide: 'income', hasAttachments: true}),
+        }));
+      } finally {
+        mockSearchParams.value = '';
+      }
+    });
+
     it('shows the success toast from the catalog, without a split-lines part when splitLinesUpdated is omitted', async () => {
       mockBulkUpdate.mockResolvedValue({ updated: 2, skipped: 0, skippedReasons: [] });
       const toast = await import('react-hot-toast');

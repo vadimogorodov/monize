@@ -215,4 +215,105 @@ describe("Income vs Expenses register drill-down", () => {
       });
     },
   );
+  it.each([
+    ["ids", IncomeExpenseSide.Income],
+    ["filter", IncomeExpenseSide.Income],
+    ["ids", IncomeExpenseSide.Expense],
+    ["filter", IncomeExpenseSide.Expense],
+  ] as const)(
+    "recategorizes only visible postings (%s, %s)",
+    async (mode, side) => {
+      const { id: userId } = await createTestUserDirect(db);
+      const { id: accountId } = await createTestAccount(db, userId, {
+        currencyCode: "EUR",
+      });
+      const category = await createTestCategory(db, userId, {
+        name: "Reviewed",
+        categoryType: side,
+      });
+      const parents = db.getRepository(Transaction);
+      const lines = db.getRepository(TransactionSplit);
+      const saveParent = (amount: number, date: string, isSplit: boolean) =>
+        parents.save({
+          userId,
+          accountId,
+          currencyCode: "EUR",
+          transactionDate: date,
+          amount,
+          isSplit,
+          description: isSplit ? undefined : "selected",
+        });
+      const split = await saveParent(-3, start, true);
+      const receipt = await lines.save({
+        transactionId: split.id,
+        amount: 5,
+        memo: "selected",
+      });
+      const payment = await lines.save({
+        transactionId: split.id,
+        amount: -8,
+        memo: "selected",
+      });
+      const other = await saveParent(0, end, true);
+      const hidden = await lines.save({
+        transactionId: other.id,
+        amount: 5,
+        memo: "hidden",
+      });
+      const matched = await lines.save({
+        transactionId: other.id,
+        amount: 5,
+        memo: "selected",
+      });
+      const opposite = await lines.save({
+        transactionId: other.id,
+        amount: -10,
+        memo: "selected",
+      });
+      const plain = await saveParent(
+        side === IncomeExpenseSide.Income ? 12 : -12,
+        end,
+        false,
+      );
+      const excluded = await saveParent(plain.amount, start, false);
+      const outside = await saveParent(plain.amount, "2025-10-01", false);
+      await withUserContext(userId, () =>
+        module.get(TransactionsService).bulkUpdate(userId, {
+          ...(mode === "ids"
+            ? {
+                mode,
+                transactionIds: [split.id, other.id, plain.id, outside.id],
+              }
+            : { mode, excludedIds: [excluded.id] }),
+          filters: {
+            startDate: start,
+            endDate: end,
+            accountIds: [accountId],
+            search: "selected",
+          },
+          reportCategoryScope: { reportSide: side },
+          categoryId: category.id,
+        }),
+      );
+      const income = side === IncomeExpenseSide.Income;
+      for (const [line, expected] of [
+        [receipt, income],
+        [payment, !income],
+        [hidden, false],
+        [matched, income],
+        [opposite, !income],
+      ] as const) {
+        expect((await lines.findOneByOrFail({ id: line.id })).categoryId).toBe(
+          expected ? category.id : null,
+        );
+      }
+      for (const row of [split, other, plain, excluded, outside]) {
+        const stored = await parents.findOneByOrFail({ id: row.id });
+        expect(stored.categoryId).toBe(
+          row.id === plain.id ? category.id : null,
+        );
+        expect(Number(stored.amount)).toBe(Number(row.amount));
+      }
+    },
+  );
 });

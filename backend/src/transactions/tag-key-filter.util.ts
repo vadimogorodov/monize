@@ -1,3 +1,5 @@
+import { BadRequestException } from "@nestjs/common";
+import { tr } from "../i18n/translate";
 import { escapeLikePattern } from "./transaction-search.util";
 
 /**
@@ -105,3 +107,52 @@ export const TAG_KEY_FILTER_OPS: readonly TagKeyFilterOp[] = [
   "contains",
   "notContains",
 ];
+
+/**
+ * Build a KEY:VALUE tag filter from the `tagKey` / `tagKeyOp` / `tagKeyValue`
+ * query params. Returns undefined when no key is given. Validates the operator
+ * and that contains/notContains carry a term.
+ */
+export function parseTagKeyFilter(
+  tagKey?: string,
+  tagKeyOp?: string,
+  tagKeyValue?: string,
+): TagKeyFilter | undefined {
+  const key = (tagKey ?? "").trim();
+  if (key === "") return undefined;
+  if (key.length > 100) {
+    throw new BadRequestException(
+      tr(
+        "errors.params.maxLength",
+        'The value of "tagKey" must not exceed 100 characters',
+        { param: "tagKey", max: "100" },
+      ),
+    );
+  }
+
+  const op = (tagKeyOp ?? "hasValue").trim() as TagKeyFilterOp;
+  if (!TAG_KEY_FILTER_OPS.includes(op)) {
+    throw new BadRequestException(
+      tr("errors.transactions.invalidTagKeyOp", `Invalid tagKeyOp: ${op}`, {
+        op,
+      }),
+    );
+  }
+
+  let value: string | undefined;
+  if (tagKeyOpNeedsValue(op)) {
+    value = (tagKeyValue ?? "").trim();
+    if (value === "") {
+      throw new BadRequestException(
+        tr(
+          "errors.params.isRequired",
+          'A value for "tagKeyValue" is required',
+          { param: "tagKeyValue" },
+        ),
+      );
+    }
+    value = value.slice(0, 200);
+  }
+
+  return { key, op, value };
+}

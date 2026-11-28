@@ -1471,14 +1471,20 @@ function TransactionsContent() {
   // lands, and clearing there dropped a selection the user had already made.
   // Derived from `bulkUpdateFilters` -- with only the derived account scope
   // swapped for the user's own choice -- so the two lists cannot drift apart.
+  const reportCategoryScope = useMemo(() => {
+    const { reportSide, statuses, originalCurrencyCodes, hasAttachments, tagKey, tagKeyOp, tagKeyValue } = calendarFilters;
+    return reportSide ? { reportSide, statuses, originalCurrencyCodes, hasAttachments, tagKey, tagKeyOp, tagKeyValue } : undefined;
+  }, [calendarFilters]);
+
   const selectionUserFilterKey = useMemo(
     () =>
       JSON.stringify({
         ...bulkUpdateFilters,
         accountIds: filters.filterAccountIds,
         accountStatus: filters.filterAccountStatus,
+        reportCategoryScope,
       }),
-    [bulkUpdateFilters, filters.filterAccountIds, filters.filterAccountStatus],
+    [bulkUpdateFilters, filters.filterAccountIds, filters.filterAccountStatus, reportCategoryScope],
   );
 
   const selection = useTransactionSelection(
@@ -1498,7 +1504,10 @@ function TransactionsContent() {
       bulkUpdateFilters.categoryIds && bulkUpdateFilters.categoryIds.length > 0
         ? { categoryFilterIds: bulkUpdateFilters.categoryIds }
         : {};
-    const result = await transactionsApi.bulkUpdate({ ...payload, ...categoryFilterIds, ...updateFields } as BulkUpdateData);
+    const scope = reportCategoryScope && 'categoryId' in updateFields
+      ? { reportCategoryScope, filters: bulkUpdateFilters }
+      : categoryFilterIds;
+    const result = await transactionsApi.bulkUpdate({ ...payload, ...scope, ...updateFields });
 
     const parts = [t('bulk.toasts.updated', { count: result.updated })];
     if (result.skipped > 0) parts.push(t('bulk.toasts.skipped', { count: result.skipped }));
@@ -1521,7 +1530,7 @@ function TransactionsContent() {
     selection.clearSelection();
     loadAllData();
     return result;
-  }, [selection, loadAllData, t, bulkUpdateFilters.categoryIds]);
+  }, [selection, loadAllData, t, bulkUpdateFilters, reportCategoryScope]);
 
   const handleBulkDelete = useCallback(async () => {
     const payload = selection.buildSelectionPayload();

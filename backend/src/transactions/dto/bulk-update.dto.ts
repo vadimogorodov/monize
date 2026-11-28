@@ -2,6 +2,9 @@ import {
   ArrayMaxSize,
   IsArray,
   IsDateString,
+  IsBoolean,
+  IsObject,
+  IsIn,
   IsEnum,
   IsNumber,
   IsOptional,
@@ -19,6 +22,52 @@ import { TransactionStatus } from "../entities/transaction.entity";
 import { SanitizeHtml } from "../../common/decorators/sanitize-html.decorator";
 import { TRANSACTION_NOTE_MAX_LENGTH } from "../../common/transaction-note";
 import { TRANSACTION_PAYEE_NAME_MAX_LENGTH } from "./create-transaction.dto";
+
+import { IncomeExpenseSide } from "../../common/income-expense-posting";
+import { TAG_KEY_FILTER_OPS, TagKeyFilterOp } from "../tag-key-filter.util";
+
+class ReportCategoryScopeDto {
+  @ApiProperty({ enum: IncomeExpenseSide })
+  @IsEnum(IncomeExpenseSide)
+  reportSide: IncomeExpenseSide;
+
+  @ApiPropertyOptional({ enum: TransactionStatus, isArray: true })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsEnum(TransactionStatus, { each: true })
+  statuses?: TransactionStatus[];
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(10, { each: true })
+  originalCurrencyCodes?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  hasAttachments?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  tagKey?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsIn(TAG_KEY_FILTER_OPS)
+  tagKeyOp?: TagKeyFilterOp;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  tagKeyValue?: string;
+}
 
 export class BulkUpdateFilterDto {
   @ApiPropertyOptional({ description: "Filter by account IDs" })
@@ -78,6 +127,13 @@ export class BulkUpdateFilterDto {
 }
 
 export class BulkUpdateDto {
+  @ApiPropertyOptional({ type: ReportCategoryScopeDto })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ReportCategoryScopeDto)
+  reportCategoryScope?: ReportCategoryScopeDto;
+
   @ApiProperty({
     description:
       'Selection mode: "ids" for explicit IDs, "filter" for filter-based',
@@ -98,8 +154,9 @@ export class BulkUpdateDto {
   @ApiPropertyOptional({
     description: 'Filters (used when mode is "filter")',
   })
-  @ValidateIf((o) => o.mode === "filter")
+  @ValidateIf((o) => o.mode === "filter" || o.reportCategoryScope != null)
   @IsOptional()
+  @IsObject()
   @ValidateNested()
   @Type(() => BulkUpdateFilterDto)
   filters?: BulkUpdateFilterDto;

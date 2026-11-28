@@ -20,6 +20,22 @@ function constraintNames(errors: ValidationError[]): string[] {
 const uuid = "d290f1ee-6c54-4b01-90e6-d701748f0851";
 
 describe("BulkUpdateDto filter fields", () => {
+  it.each(["ids", "filter"])(
+    "validates nested report scope and filters for %s mode",
+    async (mode) => {
+      const dto = buildDto({
+        mode,
+        transactionIds: [uuid],
+        categoryId: uuid,
+        filters: { tagIds: ["not-a-uuid"] },
+        reportCategoryScope: { reportSide: "both" },
+      });
+      expect(constraintNames(await validate(dto))).toEqual(
+        expect.arrayContaining(["isUuid", "isEnum"]),
+      );
+    },
+  );
+
   it("accepts amountFrom, amountTo and tagIds", async () => {
     const dto = buildDto({
       mode: "filter",

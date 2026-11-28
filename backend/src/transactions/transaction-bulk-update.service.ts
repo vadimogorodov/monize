@@ -59,6 +59,11 @@ import {
   assertReconciledRowsMutable,
 } from "./reconciled-lock.util";
 
+interface ReportPosting {
+  transactionId: string;
+  splitId: string | null;
+}
+
 export interface BulkDeleteResult {
   deleted: number;
 }
@@ -144,6 +149,7 @@ export class TransactionBulkUpdateService {
   async bulkUpdate(
     userId: string,
     dto: BulkUpdateDto,
+    readReportPostings?: (m: EntityManager) => Promise<ReportPosting[]>,
   ): Promise<BulkUpdateResult> {
     const updateFields = this.extractUpdateFields(dto);
     const isUpdatingTags = "tagIds" in dto;
@@ -184,7 +190,22 @@ export class TransactionBulkUpdateService {
     const isUpdatingStatus = "status" in dto;
 
     // Step 1: Get eligible transaction IDs
-    const allIds = await this.resolveTransactionIds(userId, dto);
+    if (
+      dto.reportCategoryScope &&
+      (!isUpdatingCategory || !readReportPostings)
+    ) {
+      throw new BadRequestException(
+        tr("errors.params.isRequired", 'A value for "categoryId" is required', {
+          param: "categoryId",
+        }),
+      );
+    }
+    const reportPostings = readReportPostings
+      ? await withScopedDb(this.dataSource, readReportPostings)
+      : undefined;
+    const allIds = reportPostings
+      ? [...new Set(reportPostings.map((row) => row.transactionId))]
+      : await this.resolveTransactionIds(userId, dto);
     if (allIds.length === 0) {
       return { updated: 0, skipped: 0, skippedReasons: [] };
     }
@@ -410,6 +431,26 @@ export class TransactionBulkUpdateService {
         );
       }
 
+      // Re-read before the first mutation, after planCategoryWrite has locked
+      // the parents. A line may have moved off the clicked side since selection.
+      if (reportPostings && readReportPostings) {
+        const current = await readReportPostings(m);
+        const postingKey = (row: ReportPosting) =>
+          row.transactionId + "/" + (row.splitId ?? "");
+        const currentKeys = new Set(current.map(postingKey));
+        if (
+          current.length !== reportPostings.length ||
+          reportPostings.some((row) => !currentKeys.has(postingKey(row)))
+        ) {
+          throw new ConflictException(
+            tr(
+              "errors.transactions.bulkUpdateConcurrentChange",
+              "These transactions changed while the update was running. Reload and try again.",
+            ),
+          );
+        }
+      }
+
       // WP1b: read the pre-write values of exactly the fields this run changes,
       // before ANY update runs -- including the counterpart and propagated rows
       // a status change writes, or undo cannot restore them. The split-line
@@ -584,11 +625,13 @@ export class TransactionBulkUpdateService {
         splitParentIds.length > 0 &&
         !categoryPlan.skipsCategoryLines
       ) {
-        const restriction = await this.resolveCategoryRestriction(
-          m,
-          userId,
-          dto,
-        );
+        const restriction = reportPostings
+          ? {
+              splitIds: reportPostings.flatMap((row) =>
+                row.splitId ? [row.splitId] : [],
+              ),
+            }
+          : await this.resolveCategoryRestriction(m, userId, dto);
         changedLines = await this.splitService.bulkRecategorizeCategorySplits(
           userId,
           splitParentIds,

@@ -826,7 +826,8 @@ export class TransactionSplitService {
    * - I6: the parent rows are locked first (`lockTransactionRows`), the same
    *   lock `updateSplits`/`addSplit` take, so split-set writers serialize.
    *
-   * `restrictToCategoryIds` is the descendant-expanded category filter set;
+   * A category ID array is the descendant-expanded category filter set.
+   * A report selection supplies the exact split IDs from the register query;
    * `undefined` means all category-kind lines. Joins the caller's ambient
    * transaction when called from inside one (bulk update).
    */
@@ -834,7 +835,7 @@ export class TransactionSplitService {
     userId: string,
     parentIds: string[],
     newCategoryId: string | null,
-    restrictToCategoryIds?: string[],
+    restriction?: string[] | { splitIds: string[] },
   ): Promise<
     {
       splitId: string;
@@ -843,11 +844,10 @@ export class TransactionSplitService {
     }[]
   > {
     if (parentIds.length === 0) return [];
-    if (
-      restrictToCategoryIds !== undefined &&
-      restrictToCategoryIds.length === 0
-    )
-      return [];
+    const ids = Array.isArray(restriction)
+      ? restriction
+      : restriction?.splitIds;
+    if (ids?.length === 0) return [];
 
     return withScopedDb(this.dataSource, async (m) => {
       // Only category lines are written here, and a category line takes only
@@ -861,9 +861,11 @@ export class TransactionSplitService {
 
       const params: unknown[] = [userId, parentIds];
       let restrictClause = "";
-      if (restrictToCategoryIds !== undefined) {
-        params.push(restrictToCategoryIds);
-        restrictClause = " AND s.category_id = ANY($3)";
+      if (ids !== undefined) {
+        params.push(ids);
+        restrictClause = Array.isArray(restriction)
+          ? " AND s.category_id = ANY($3)"
+          : " AND s.id = ANY($3)";
       }
 
       const rows: {

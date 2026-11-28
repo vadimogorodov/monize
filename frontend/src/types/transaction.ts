@@ -549,6 +549,15 @@ export interface BulkUpdateFilters {
 }
 
 export interface BulkUpdateData {
+  reportCategoryScope?: {
+    reportSide: 'income' | 'expense';
+    statuses?: TransactionStatus[];
+    originalCurrencyCodes?: string[];
+    hasAttachments?: boolean;
+    tagKey?: string;
+    tagKeyOp?: 'hasValue' | 'noValue' | 'contains' | 'notContains';
+    tagKeyValue?: string;
+  };
   mode: 'ids' | 'filter';
   transactionIds?: string[];
   filters?: BulkUpdateFilters;
