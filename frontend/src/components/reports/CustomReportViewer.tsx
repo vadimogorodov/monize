@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { ReportChart } from './ReportChart';
@@ -11,8 +11,6 @@ import { Select } from '@/components/ui/Select';
 import { customReportsApi } from '@/lib/custom-reports';
 import { colourReportRows } from './custom-report-colours';
 import {
-  CustomReport,
-  ReportResult,
   ReportViewType,
   TimeframeType,
   GroupByType,
@@ -21,7 +19,8 @@ import {
 } from '@/types/custom-report';
 import { useNumberFormat } from '@/hooks/useNumberFormat';
 import { useDateFormat } from '@/hooks/useDateFormat';
-import { createLogger } from '@/lib/logger';
+import { useReportData } from '@/hooks/useReportData';
+import { ReportError } from './ReportError';
 import { getErrorMessage } from '@/lib/errors';
 import { useTranslations } from 'next-intl';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -33,8 +32,6 @@ import { customReportMeasure } from '@/lib/custom-report-measure';
 import { customReportDrillDownHref } from '@/lib/custom-report-links';
 import { CARD_CLASS } from '@/components/ui/Card';
 
-const logger = createLogger('CustomReportViewer');
-
 interface CustomReportViewerProps {
   reportId: string;
 }
@@ -45,103 +42,39 @@ export function CustomReportViewer({ reportId }: CustomReportViewerProps) {
   const router = useRouter();
   const { formatCurrency, formatNumber, defaultCurrency } = useNumberFormat();
   const { formatDate } = useDateFormat();
-  const [report, setReport] = useState<CustomReport | null>(null);
-  const [result, setResult] = useState<ReportResult | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isExecuting, setIsExecuting] = useState(false);
+  const definition = useReportData(() => customReportsApi.getById(reportId), [reportId], {
+    requestKey: reportId,
+  });
+  const report = definition.dataKey === reportId ? definition.data : null;
+  const isLoading = definition.isLoading;
   const [overrideTimeframe, setOverrideTimeframe] = useState<TimeframeType | ''>('');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
 
-  const loadReport = useCallback(async () => {
-    try {
-      const reportData = await customReportsApi.getById(reportId);
-      setReport(reportData);
-    } catch (error) {
-      toast.error(getErrorMessage(error, t('customReportViewer.toasts.loadFailed')));
-      logger.error(error);
-    }
-  }, [reportId, t]);
-
-  // Whether the auto-execute effect below will run the report for the current
-  // inputs: never before the report has loaded, nor for a custom range whose
-  // dates are incomplete.
-  const willExecute =
-    !!report &&
-    !(overrideTimeframe === TimeframeType.CUSTOM && (!customStartDate || !customEndDate));
-
-  // The inputs the report last ran for. When they change, the "becomes
-  // executing" transition happens here, during render, rather than from inside
-  // the effect that sends the request.
-  const [executeInputs, setExecuteInputs] = useState({
-    reportId,
-    report,
-    overrideTimeframe,
-    customStartDate,
-    customEndDate,
-  });
-  if (
-    executeInputs.reportId !== reportId ||
-    executeInputs.report !== report ||
-    executeInputs.overrideTimeframe !== overrideTimeframe ||
-    executeInputs.customStartDate !== customStartDate ||
-    executeInputs.customEndDate !== customEndDate
-  ) {
-    setExecuteInputs({ reportId, report, overrideTimeframe, customStartDate, customEndDate });
-    if (willExecute) setIsExecuting(true);
-  }
-
-  const executeReport = useCallback(() => {
-    if (!report) return Promise.resolve();
-
-    // The state writes live in this inner function so they run once the
-    // request settles, never synchronously inside the effect that calls this.
-    const run = async () => {
-      try {
-        let params: { timeframeType?: TimeframeType; startDate?: string; endDate?: string } = {};
-
-        // Use override timeframe if selected
-        if (overrideTimeframe) {
-          params.timeframeType = overrideTimeframe;
-
-          // Include custom dates if custom timeframe is selected
-          if (overrideTimeframe === TimeframeType.CUSTOM && customStartDate && customEndDate) {
-            params.startDate = customStartDate;
-            params.endDate = customEndDate;
-          }
-        }
-
-        const resultData = await customReportsApi.execute(reportId, params);
-        setResult(resultData);
-      } catch (error) {
-        toast.error(getErrorMessage(error, t('customReportViewer.toasts.executeFailed')));
-        logger.error(error);
-      } finally {
-        setIsExecuting(false);
-      }
-    };
-    return run();
-  }, [reportId, report, overrideTimeframe, customStartDate, customEndDate, t]);
-
   useEffect(() => {
-    const init = async () => {
-      setIsLoading(true);
-      await loadReport();
-      setIsLoading(false);
-    };
-    init();
-  }, [loadReport]);
-
-  useEffect(() => {
-    if (!report) return;
-
-    // Don't auto-execute if custom range is selected but dates are incomplete
-    if (overrideTimeframe === TimeframeType.CUSTOM && (!customStartDate || !customEndDate)) {
-      return;
+    if (definition.error) {
+      toast.error(getErrorMessage(definition.error, t('customReportViewer.toasts.loadFailed')));
     }
+  }, [definition.error, t]);
 
-    executeReport();
-  }, [report, executeReport, overrideTimeframe, customStartDate, customEndDate]);
+  const request = useMemo(() => {
+    if (!report) return null;
+    if (overrideTimeframe === TimeframeType.CUSTOM) {
+      if (!customStartDate || !customEndDate) return null;
+      return { timeframeType: overrideTimeframe, startDate: customStartDate, endDate: customEndDate };
+    }
+    return overrideTimeframe ? { timeframeType: overrideTimeframe } : {};
+  }, [report, overrideTimeframe, customStartDate, customEndDate]);
+
+  const execution = useReportData(async () => {
+    if (!request) return null;
+    return { request, result: await customReportsApi.execute(reportId, request) };
+  }, [reportId, request]);
+
+  // Returning to a previously selected period starts a fresh execution too.
+  const current = execution.data?.request === request ? execution.data : null;
+  const isExecuting = !!request && (execution.isLoading || (!current && !execution.error));
+  const result = !isExecuting && !execution.error ? current?.result : null;
 
   // Into the register over the report's own filters and dates, narrowed to
   // what was clicked; a listed transaction is flashed on its page.
@@ -292,6 +225,11 @@ export function CustomReportViewer({ reportId }: CustomReportViewerProps) {
             <p className="text-gray-500 dark:text-gray-400">{t('customReportViewer.generating')}</p>
           </div>
         </div>
+      ) : request && execution.error ? (
+        <ReportError
+          message={getErrorMessage(execution.error, t('customReportViewer.toasts.executeFailed'))}
+          onRetry={execution.reload}
+        />
       ) : result ? (
         <div className={`${CARD_CLASS} p-6`}>
           {/* Summary */}

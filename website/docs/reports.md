@@ -396,7 +396,7 @@ A circular chart showing proportional breakdown. Best for understanding the comp
 
 ### Viewing a Custom Report
 
-A saved custom report opens with its saved timeframe. Monetary totals, table rows, and PDF exports use the currency in which that report was calculated. Change the **Timeframe** on the report to look at another period without editing it, and choose **Use saved timeframe** to go back. A report that reaches the row limit says so and asks you to narrow the timeframe or filters.
+A saved custom report opens with its saved timeframe. Monetary totals, table rows, and PDF exports use the currency in which that report was calculated. Change the **Timeframe** on the report to look at another period without editing it, and choose **Use saved timeframe** to go back. Export becomes available when the selected timeframe has loaded. If it fails to load, click **Try Again**. A report that reaches the row limit says so and asks you to narrow the timeframe or filters.
 
 Click a row, bar, slice or legend entry to open the Transactions page over the report's date range with the report's own account, category, payee, tag and search filters applied:
 

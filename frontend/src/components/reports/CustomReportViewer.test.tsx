@@ -117,9 +117,9 @@ describe("CustomReportViewer", () => {
     mockPush.mockClear();
   });
 
-  it("shows loading state initially", () => {
+  it("shows loading state initially", async () => {
     mockGetById.mockReturnValue(new Promise(() => {}));
-    render(<CustomReportViewer reportId="rpt-1" />);
+    await act(async () => { render(<CustomReportViewer reportId="rpt-1" />); });
     expect(document.querySelector(".animate-spin")).toBeTruthy();
   });
 
