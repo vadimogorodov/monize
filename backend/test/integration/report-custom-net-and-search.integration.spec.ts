@@ -163,6 +163,75 @@ describe("custom report: signed category sums and escaped search (integration)",
   }
 
   it.each([
+    ["whole", -100, -100],
+    ["one line", -60, -60],
+    ["sibling lines", 0, -100],
+    ["inherited", -60, -100],
+  ] as const)(
+    "matches tag groups on one posting: %s",
+    async (shape, both, either) => {
+      const parent = await insertTransaction({
+        isSplit: shape !== "whole",
+        categoryId: shape === "whole" ? groceriesId : null,
+      });
+      const [a, b, extra]: Array<{ id: string }> = await dataSource.query(
+        "INSERT INTO tags (user_id, name) VALUES ($1, 'A'), ($1, 'B'), ($1, 'Extra') RETURNING id",
+        [userId],
+      );
+      async function setTag(tagId: string, splitId?: string) {
+        if (splitId) {
+          await dataSource.query(
+            "INSERT INTO transaction_split_tags (transaction_split_id, tag_id) VALUES ($1, $2)",
+            [splitId, tagId],
+          );
+        } else {
+          await dataSource.query(
+            "INSERT INTO transaction_tags (transaction_id, tag_id) VALUES ($1, $2)",
+            [parent.id, tagId],
+          );
+        }
+      }
+      if (shape === "whole") {
+        for (const tag of [a, b, extra]) await setTag(tag.id);
+      } else {
+        const [first, second] = await dataSource
+          .getRepository(TransactionSplit)
+          .save([
+            { transactionId: parent.id, categoryId: groceriesId, amount: -60 },
+            { transactionId: parent.id, categoryId: groceriesId, amount: -40 },
+          ]);
+        await setTag(a.id, shape === "inherited" ? undefined : first.id);
+        await setTag(b.id, shape === "sibling lines" ? second.id : first.id);
+        await setTag(extra.id, first.id);
+      }
+      const tag = (value: string) => ({ field: "tag" as const, value });
+      async function filtered(groups: string[][]) {
+        return run({
+          direction: DirectionFilter.BOTH,
+          groupBy: GroupByType.TAG,
+          filters: {
+            filterGroups: groups.map((ids) => ({ conditions: ids.map(tag) })),
+          },
+        });
+      }
+      for (const ids of [
+        [a.id, b.id],
+        [b.id, a.id],
+      ]) {
+        const matching = await filtered(ids.map((id) => [id]));
+        expect(matching.summary.total).toBe(both);
+        const labels = matching.data.map((row) => row.label);
+        if (both) expect(labels).toEqual(expect.arrayContaining(["A", "B"]));
+        if (shape !== "inherited") expect(labels).not.toContain("Extra");
+        expect((await filtered([ids])).summary.total).toBe(either);
+      }
+      const single = await filtered([[b.id]]);
+      if (shape !== "inherited")
+        expect(single.data.map((row) => row.label)).toEqual(["B"]);
+    },
+  );
+
+  it.each([
     [DirectionFilter.BOTH, -20, -6.67, 3],
     [DirectionFilter.OUTGOING, -1020, -510, 2],
     [DirectionFilter.INCOMING, 1000, 1000, 1],

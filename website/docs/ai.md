@@ -128,7 +128,7 @@ The assistant has access to the following financial tools:
 | **List Transactions** | Search and summarize transactions with filters |
 | **List Accounts** | Account balances and net worth, with foreign accounts converted to your default currency |
 | **List Categories**, **List Payees** and **List Tags** | Your category tree, payees and [tags](tags.md) (with how often each tag is used) |
-| **Compare Periods** | Side-by-side comparison of two time periods |
+| **Compare Periods** | Compares two time periods. Category and payee groupings include the same spending; refunds can leave zero or negative spending for a payee. |
 | **Generate Report** | A built-in report: spending by category or payee, income vs. expenses, trends, anomalies, month comparison, net-worth history |
 | **Budget Status** | Current budget vs actual spending |
 | **Upcoming Bills** | Scheduled bills and deposits |
@@ -339,7 +339,7 @@ The approval step is a confirmation dialog that Monize asks your MCP client to s
 
 | Tool | Description | Scope |
 |------|-------------|-------|
-| `list_transactions` | Search and summarize transactions. In grouped results, `expenses` deducts refunds in expense categories and `outgoing` sums debits. A 100 USD purchase and 30 USD refund give 70 USD in expenses and 100 USD outgoing. Grouping by payee keeps each linked payee separate, even when transactions share the same description. Request individual rows to see transactions matching any of the selected accounts, any of the selected categories, and any of the selected payees. | read |
+| `list_transactions` | Search and summarize transactions. In grouped results, `expenses` deducts refunds in expense categories and `outgoing` sums debits. A 100 USD purchase and 30 USD refund give 70 USD in expenses and 100 USD outgoing. Grouping by payee keeps each linked payee separate, even when transactions share the same description. A security purchase on a split line is excluded from the breakdown just like a standalone trade. Ordinary payments on the same transaction are included. Request individual rows to see transactions matching any of the selected accounts, any of the selected categories, and any of the selected payees. | read |
 | `list_accounts` | List accounts with balances and net worth | read |
 | `list_categories` | Browse the category tree | read |
 | `list_payees` | List payees | read |

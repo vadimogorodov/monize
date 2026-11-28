@@ -2690,14 +2690,21 @@ export class ToolExecutorService {
     const fig = await this.figureIn(cur);
     const periods = `Period 1 (${period1Start} to ${period1End})${includesEstimates(data.period1.provisionalCount)}`;
     const periods2 = `Period 2 (${period2Start} to ${period2End})${includesEstimates(data.period2.provisionalCount)}`;
-    const summary =
+    let summary: string;
+    if (
       data.fxComplete === false ||
       data.period1.total === null ||
       data.period2.total === null ||
-      data.totalChange === null ||
-      data.totalChangePercent === null
-        ? `Totals withheld: no exchange rate for ${data.missingRatePairs.join(", ")}; add it under Currencies. Converted so far: ${periods} ${fig(data.period1.knownSubtotal)} ${cur}, ${periods2} ${fig(data.period2.knownSubtotal)} ${cur}`
-        : `${periods}: ${fig(data.period1.total)} ${cur}, ${periods2}: ${fig(data.period2.total)} ${cur}, Change: ${data.totalChange >= 0 ? "+" : ""}${fig(data.totalChange)} ${cur} (${data.totalChangePercent >= 0 ? "+" : ""}${data.totalChangePercent}%)`;
+      data.totalChange === null
+    ) {
+      summary = `Totals withheld: no exchange rate for ${data.missingRatePairs.join(", ")}; add it under Currencies. Converted so far: ${periods} ${fig(data.period1.knownSubtotal)} ${cur}, ${periods2} ${fig(data.period2.knownSubtotal)} ${cur}`;
+    } else {
+      const percent =
+        data.totalChangePercent === null
+          ? "percentage undefined for the starting expense amount"
+          : `${data.totalChangePercent >= 0 ? "+" : ""}${data.totalChangePercent}%`;
+      summary = `${periods}: ${fig(data.period1.total)} ${cur}, ${periods2}: ${fig(data.period2.total)} ${cur}, Change: ${data.totalChange >= 0 ? "+" : ""}${fig(data.totalChange)} ${cur} (${percent})`;
+    }
 
     return {
       data,
