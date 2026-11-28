@@ -3460,9 +3460,24 @@ export class ToolExecutorService {
                 : "a component could not be converted"
             } (the user can add a rate on the Currencies page).`
           : "";
+      const partialMonths = [
+        data.incomeExpenses?.currentPartial,
+        data.incomeExpenses?.previousPartial,
+        data.expenses?.currentPartial,
+        data.expenses?.previousPartial,
+      ];
+      const missingCurrencies = [
+        ...new Set(
+          partialMonths.flatMap((month) => month?.missingCurrencies ?? []),
+        ),
+      ];
+      const cashFlowNote = this.missingRateNote(
+        { currency: data.currency, missingCurrencies },
+        "Monthly cash-flow comparisons withheld",
+      );
       return {
         data,
-        summary: `Comparison of ${data.currentMonthLabel} vs ${data.previousMonthLabel}.${netWorthNote}`,
+        summary: `Comparison of ${data.currentMonthLabel} vs ${data.previousMonthLabel}.${cashFlowNote}${netWorthNote}`,
         sources: [
           {
             type: "monthly_comparison",
