@@ -19,6 +19,7 @@ import { Payee } from '@/types/payee';
 import { Tag } from '@/types/tag';
 import { TransactionStatus } from '@/types/transaction';
 import { isUuid } from '@/lib/uuid';
+import type { IncomeExpenseSide } from '@/lib/transactions';
 import { useAccountPickerIcon } from '@/components/accounts/shared/AccountPickerIcon';
 import { withCategoryIcons } from '@/components/categories/CategoryPickerIcon';
 import { payeeOptionIcon } from '@/components/payees/withPayeeIcons';
@@ -172,7 +173,7 @@ function getStoredValue<T>(key: string, defaultValue: T): T {
   }
 }
 
-function reportSideFromLink(params: Pick<URLSearchParams, 'get'>) {
+function reportSideFromLink(params: Pick<URLSearchParams, 'get'>): IncomeExpenseSide | undefined {
   const side = params.get('reportSide');
   return side === 'income' || side === 'expense' ? side : undefined;
 }
@@ -220,7 +221,7 @@ export function useTransactionFilters({ accounts, categories, payees, tags, week
     const query = params.toString();
     router.replace(query ? `/transactions?${query}` : '/transactions', { scroll: false });
   }, [router]);
-  const [reportSide, setReportSide] = useState(() => reportSideFromLink(searchParams));
+  const [reportSide, setReportSide] = useState<IncomeExpenseSide | undefined>(() => reportSideFromLink(searchParams));
   const [rawFilterCategoryIds, setFilterCategoryIds] = useState<string[]>([]);
   // What the user ticked, with any whole type collapsed to its pseudo-id. Every
   // reader (the requests, the URL, localStorage, the chips, the picker) sees
