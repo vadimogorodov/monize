@@ -2277,6 +2277,27 @@ describe("ToolExecutorService", () => {
       expect(result.summary).not.toContain("withheld");
     });
 
+    it("names the missing monthly cash-flow rates even when net worth is complete", async () => {
+      const complete = await builtInReports.getMonthlyComparison();
+      const partial = { missingCurrencies: ["JPY"], knownExpenses: 12 };
+      builtInReports.getMonthlyComparison.mockResolvedValueOnce({
+        ...complete,
+        incomeExpenses: { currentPartial: partial },
+        expenses: {
+          currentPartial: partial,
+          previousPartial: { missingCurrencies: ["EUR"] },
+        },
+      });
+      const result = await service.execute(userId, "generate_report", {
+        type: "month_comparison",
+        month: "2026-04",
+      });
+      expect(result.summary).toContain("JPY->USD");
+      expect(result.summary).toContain("EUR->USD");
+      expect(result.summary.match(/JPY->USD/g)).toHaveLength(1);
+      expect(result.summary).not.toContain("Net worth is withheld");
+    });
+
     it("month_comparison says net worth is withheld for an incomplete month and names the pairs", async () => {
       const complete = await builtInReports.getMonthlyComparison();
       builtInReports.getMonthlyComparison.mockResolvedValueOnce({
