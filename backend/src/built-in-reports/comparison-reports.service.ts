@@ -1,3 +1,4 @@
+import { assetValueChangeExclusionSql } from "../common/asset-value-change-filter.util";
 import { Injectable } from "@nestjs/common";
 import { categoryTypeIs } from "../categories/category-type.util";
 import { DataSource } from "typeorm";
@@ -88,6 +89,7 @@ export class ComparisonReportsService {
         AND (t.status IS NULL OR t.status != 'VOID')
         AND t.parent_transaction_id IS NULL
         AND ${INVESTMENT_EXCLUSION}
+        AND ${assetValueChangeExclusionSql("t", "ts")}
         AND (ts.transfer_account_id IS NULL OR ts.id IS NULL)
       GROUP BY EXTRACT(YEAR FROM t.transaction_date), EXTRACT(MONTH FROM t.transaction_date), t.currency_code, ${RATE_BASIS_GROUP_BY}
       ORDER BY year, month
