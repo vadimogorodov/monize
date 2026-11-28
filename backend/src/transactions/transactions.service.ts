@@ -174,7 +174,7 @@ import {
   findCategoryPartner,
   writeCategoryPartner,
 } from "./transfer-category-partner";
-import { moneyDecimalsFor, roundMoney } from "../common/round.util";
+import { moneyDecimalsFor, roundMoney, sumMoney } from "../common/round.util";
 import { assertAmountPrecision } from "../common/amount-precision.util";
 import { hasForeignEntryRequest } from "../common/foreign-entry.util";
 import {
@@ -239,6 +239,8 @@ export interface CreateTransactionOutcome {
 
 export interface TransactionWithInvestmentLink
   extends Transaction, Partial<RegisterRowReportingRate> {
+  /** For a split opened from a report bar, the amount of its contributing lines. */
+  reportAmount?: number;
   linkedInvestmentTransactionId?: string | null;
   attachmentCount?: number;
   /** Unarchived warranties linked to the row. */
@@ -2195,10 +2197,17 @@ export class TransactionsService {
       // currencies take the finest of them, which drops nothing.
       const needsSeed =
         singleAccountSeed || multiAccountSeed || allAccountsSeed;
-      const balanceDecimals =
-        sortBy === "date" && needsSeed
-          ? await this.registerBalanceDecimals(m, data)
-          : moneyDecimalsFor(undefined);
+      const needsPlaces =
+        (sortBy === "date" && needsSeed) ||
+        (reportSide && data.some((row) => row.isSplit));
+      const places = await loadCurrencyPlacesForRead(
+        m,
+        needsPlaces ? data.map((row) => row.currencyCode) : [],
+      );
+      const balanceDecimals = Math.max(
+        moneyDecimalsFor(undefined),
+        ...data.map((row) => moneyDecimalsForCode(places, row.currencyCode)),
+      );
 
       if (sortBy !== "date") {
         // A running balance is a figure about the row above, so it means
@@ -2250,6 +2259,16 @@ export class TransactionsService {
       // A page holding several currencies is totalled at each row's own
       // rate into the reporting currency, never at the client's latest one.
       await attachRegisterReportingRates(m, userId, enrichedData);
+      if (reportSide) {
+        for (const row of enrichedData) {
+          if (row.isSplit && row.splits?.length) {
+            row.reportAmount = sumMoney(
+              row.splits.map((line) => Number(line.amount)),
+              moneyDecimalsForCode(places, row.currencyCode),
+            );
+          }
+        }
+      }
 
       return {
         data: enrichedData,
@@ -2742,23 +2761,6 @@ export class TransactionsService {
       );
       return fallbackPage;
     }
-  }
-
-  /**
-   * The money precision a register page's running balance rounds at: the
-   * finest among the currencies of the rows it lists (one, for a single
-   * account), read in one query on the listing's manager.
-   */
-  private async registerBalanceDecimals(
-    m: EntityManager,
-    rows: readonly { currencyCode: string }[],
-  ): Promise<number> {
-    const codes = [...new Set(rows.map((row) => row.currencyCode))];
-    const places = await loadCurrencyPlacesForRead(m, codes);
-    return Math.max(
-      moneyDecimalsFor(undefined),
-      ...codes.map((code) => moneyDecimalsForCode(places, code)),
-    );
   }
 
   private async calculateStartingBalance(

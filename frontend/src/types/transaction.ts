@@ -119,6 +119,8 @@ export interface Transaction {
   warrantyCount?: number;
   /** The reader's reporting currency `reportingRate` converts into (populated by the list endpoint). */
   reportingCurrencyCode?: string;
+  /** Amount of the visible split lines when opened from an Income vs Expenses bar. */
+  reportAmount?: number;
   /**
    * The factor taking `amount` into `reportingCurrencyCode`: the row's own
    * settled rate, a transfer's posted amounts, else the market rate on its own

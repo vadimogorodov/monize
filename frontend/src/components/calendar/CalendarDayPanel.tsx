@@ -223,11 +223,11 @@ export function CalendarDayPanel({
                       already signed, so nothing here decides the direction. */}
                   <span
                     className={`shrink-0 text-sm tabular-nums ${gainLossColor(
-                      Number(chip.transaction.amount),
+                      chip.transaction.reportAmount ?? Number(chip.transaction.amount),
                     )}`}
                   >
                     {formatCurrency(
-                      Number(chip.transaction.amount),
+                      chip.transaction.reportAmount ?? Number(chip.transaction.amount),
                       chip.transaction.currencyCode,
                     )}
                   </span>

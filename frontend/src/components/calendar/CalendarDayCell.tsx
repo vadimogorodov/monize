@@ -227,7 +227,7 @@ export function CalendarDayCell({
               {payeeDisplay(chip.transaction) ?? t('chip.noPayee')}
             </span>
             <span className={CHIP_AMOUNT}>
-              {formatCurrency(Number(chip.transaction.amount), chip.transaction.currencyCode)}
+              {formatCurrency(chip.transaction.reportAmount ?? Number(chip.transaction.amount), chip.transaction.currencyCode)}
             </span>
           </button>
         ))}

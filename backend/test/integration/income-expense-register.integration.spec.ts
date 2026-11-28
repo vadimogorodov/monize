@@ -148,6 +148,12 @@ describe("Income vs Expenses register drill-down", () => {
               totalPages: 2,
             });
             for (const row of result.data) {
+              if (row.isSplit) {
+                expect(Number(row.amount)).toBe(-3);
+                expect(row.reportAmount).toBe(
+                  side === IncomeExpenseSide.Income ? 5 : -8,
+                );
+              }
               postings.push(...(row.isSplit ? row.splits : [row]));
             }
           }
@@ -200,6 +206,7 @@ describe("Income vs Expenses register drill-down", () => {
           args[22] = IncomeExpenseSide.Income;
           const narrowed = await register.findAll(...args);
           expect(narrowed.startingBalance).toBe(3);
+          expect(narrowed.data[0].reportAmount).toBe(3);
           expect(narrowed.data.map((row) => row.id)).toEqual([parent.id]);
           expect(narrowed.data[0].splits.map((line) => line.id)).toEqual([
             match.id,

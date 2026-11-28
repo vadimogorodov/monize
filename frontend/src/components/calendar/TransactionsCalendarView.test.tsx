@@ -537,6 +537,21 @@ describe('TransactionsCalendarView', () => {
       expect(await screen.findByText('Nothing on this day.')).toBeInTheDocument();
     });
 
+    it.each([
+      ['income', 5, '$5.00', 'text-green'],
+      ['expense', -8, '$-8.00', 'text-red'],
+    ] as const)('shows the %s contribution of a mixed split in the cell and day panel', async (side, amount, label, color) => {
+      const row = transaction({ amount: -3, isSplit: true, reportAmount: amount });
+      mockGetAllPages.mockResolvedValue([row]);
+      renderView({ filters: { reportSide: side } });
+
+      const day = cell('06/10/2026');
+      expect(await within(day).findByText(label)).toBeInTheDocument();
+      fireEvent.click(day);
+      const panel = await screen.findByRole('complementary', { name: '06/10/2026' });
+      expect(within(panel).getByText(label).className).toContain(color);
+    });
+
     it('signs each amount the way the register does: money in green, money out red', async () => {
       // The row's amount is already signed, so the panel decides nothing about
       // direction -- it colours what it was handed, through the same
