@@ -78,7 +78,7 @@ The figures a report receives are worked out from the converted amounts themselv
 | **Spending by Category** | See where your money goes with a breakdown of expenses by category over time |
 | **Spending by Payee** | See spending after refunds by merchant. A purchase of 100 and refund of 150 at the same merchant show −50. The total includes every qualifying merchant. |
 | **Monthly Spending Trend** | View your spending patterns month over month to identify trends |
-| **Monthly & Yearly Breakdown** | Expense and income by category, month by month or year by year, with subtotals, a total, and an average per month or per year. Choose **Monthly** or **Yearly** for the columns: the monthly view offers the 3M, 6M, 1Y and YTD ranges, the yearly view 2Y, 5Y, 10Y and All, and both take a **Custom** range. A yearly column covers whole calendar years, so 5Y shows the five years before the current one. A category with no parent and no subcategories is a line of its own, in alphabetical order among the parent categories. Spending recorded directly on a parent category is a row inside that parent's section, counted in its subtotal; only uncategorized transactions are left under **Other expenses** or **Other income**. Switches turn on **Summary only** (just the Summary at the bottom), **Include current month** (**Include current year** in the yearly view), **Show percentages**, and **Highlight deviations** (months or years well above or below the category's average). Transfers are listed separately, click **Income**, **Expenses**, or **Transfers** to fold that group down to its total, and a cell opens its transactions |
+| **Monthly & Yearly Breakdown** | Expense and income by category, month by month or year by year, with subtotals, a total, and an average per month or per year. Choose **Monthly** or **Yearly** for the columns: the monthly view offers the 3M, 6M, 1Y and YTD ranges, the yearly view 2Y, 5Y, 10Y and All, and both take a **Custom** range. A yearly column covers whole calendar years, so 5Y shows the five years before the current one. A category with no parent and no subcategories is a line of its own, in alphabetical order among the parent categories. Spending recorded directly on a parent category is a row inside that parent's section, counted in its subtotal; only uncategorized transactions are left under **Other expenses** or **Other income**. Switches turn on **Summary only** (just the Summary at the bottom), **Include current month** (**Include current year** in the yearly view), **Show percentages**, and **Highlight deviations** (months or years well above or below the category's average). Transfers are listed separately, click **Income**, **Expenses**, or **Transfers** to fold that group down to its total, and a cell opens its transactions A category cell with offsetting postings shows a clickable zero. An empty cell has no link. If exchange rates are missing, the CSV includes the same note as the report. |
 | **Year Over Year Comparison** | Compare this year's income, expenses, and savings with up to four previous years |
 
 In **Monthly & Yearly Breakdown**, the **Transfers** group lists money moved between your own accounts, outside income, expenses and the balance. A transfer that holds a [Transfer category](categories-and-payees.md#categories-on-transfers) is listed first under that category, with an outgoing and an incoming row and the category's subcategories nested, so a regular contribution between two accounts you included still shows what moved. Every other transfer, including one that holds an Income or Expense category, stays in its per-account row. Each side of a transfer is counted once, so the group's total does not change.
@@ -213,7 +213,7 @@ The **GEM Strategy** report follows the Global Equities Momentum strategy: at ea
 | **Recurring Expenses Tracker** | Identify and monitor subscriptions, memberships, and recurring charges |
 | **Spending Anomalies** | Detect unusually large transactions and spending spikes that need attention |
 | **Weekend vs Weekday Spending** | Analyze your spending patterns based on day of week to understand habits |
-| **Monthly Comparison** | Compare any month to the previous month across income, expenses, net worth, and investments |
+| **Monthly Comparison** | Compare any month to the previous month across income, expenses, net worth, and investments. A net refund in the earlier month leaves the expense change in money without a percentage. If a month lacks an exchange rate, the report and PDF label the converted subtotal and withhold the comparison |
 | **Cash Flow Sankey** | See where your money came from and where it went: income flowing into spending, savings, investments and debt payments, with what was left over or drawn from your balances. A purchase of 100 and a refund of 150 show 50 coming in, labelled as an expense refund. A refund of 100 leaves a zero row in the table and exports. The **Detail** switch shows categories or subcategories; click a flow to open its transactions. Each side's total is shared out between its flows so the diagram adds up exactly, which can leave a category a cent off the same category in Spending by Category or Income by Source; the report says so under the diagram |
 | **Foreign Currency Transaction Fees** | Track the foreign-transaction fees charged by accounts that apply a conversion fee. See [Currency Management](currency-management.md#foreign-transaction-fees) |
 
@@ -264,7 +264,7 @@ The report then reloads without the deleted transactions. If **Lock reconciled t
 | **Budget Health Score** | Get a 0--100 health score for your budget with detailed per-category impact analysis |
 | **Seasonal Spending Patterns** | Discover seasonal trends and high-spending months across your budget categories |
 | **Budget Trend** | Line chart showing total budgeted vs total actual spending over 6--12 months to track improvement |
-| **Category Performance** | Table showing each category's budget performance over multiple months with trend indicators |
+| **Category Performance** | Table showing each category's budget performance over multiple months. The trend follows the direction of change even when earlier refunds made usage negative |
 | **Savings Rate** | Track your savings rate (income minus expenses divided by income) over time vs your target |
 | **Health Score History** | Line chart of monthly budget health scores showing your financial trajectory over time |
 | **Flex Group Analysis** | Stacked bar chart for each flex group showing component categories with group limit reference |
@@ -329,7 +329,7 @@ Your existing reports open with the following filters. An individual transaction
 
 The signs, totals, and transactions included can change. For a purchase of −100 and a refund of +30 in the same expense category, an outgoing transaction list shows the purchase at −100. A **Total Amount** report for expense categories includes both postings and shows −70. An uncategorized payment appears in the outgoing list and is excluded from the expense-category total.
 
-In a category-grouped **Budget Variance** report, an expense refund reduces the actual cost. With a budget of 100, a purchase of 100 and a refund of 150, actual spending is −50. The variance (actual spending minus budget) is −150.
+In a category-grouped **Budget Variance** report, an expense refund reduces the actual cost. With a budget of 100, a purchase of 100 and a refund of 150, actual spending is −50. The variance (actual spending minus budget) is −150. If the budget currency has no exchange rate, the variance is unknown. The known subtotal includes only rows with a valued variance. A zero budget can be valued in any currency. An actual that includes spending with a missing rate also stays unknown. A category with no spending has an actual of zero.
 
 On the next run, a saved **Both / Total Amount** report uses the signed calculation without editing or resaving. For example, salary of +1,000 in one category, a purchase of −100 and a refund of +30 in another previously showed 1,070. The same report now shows 930. Sorting by amount can change the order of the rows. Signed totals have no percentage shares. A report previously sorted by percentage now sorts by signed amount in the same ascending or descending order. When an exchange rate is missing, each grouping withholds the same incomplete category and currency from the known subtotal.
 
@@ -343,6 +343,8 @@ The **Filters (optional)** section narrows the report to the transactions you ca
 2. In the group, pick a field -- **Account**, **Category** (which also offers *Uncategorized* and *Transfers*), **Payee**, **Tag**, or **Text** (a free-text search on the transaction's details) -- and a value
 3. Click **Add OR condition** to add another condition to the same group: a transaction matches the group if it matches any of its conditions
 4. Click **Add AND group** to add another group: a transaction must match every group
+
+To require two tags, put each tag in its own group. Both must apply to the same posting. A split line can use its own tags and tags on the parent transaction. Tags on two different split lines do not satisfy the intersection.
 
 For example, one group with *Category = Restaurants* OR *Category = Coffee Shops*, AND a second group with *Account = Visa Rewards*, reports dining out paid with that card.
 
@@ -394,7 +396,7 @@ A circular chart showing proportional breakdown. Best for understanding the comp
 
 ### Viewing a Custom Report
 
-A saved custom report opens with its saved timeframe. Change the **Timeframe** on the report to look at another period without editing it, and choose **Use saved timeframe** to go back. A report that reaches the row limit says so and asks you to narrow the timeframe or filters.
+A saved custom report opens with its saved timeframe. Monetary totals, table rows, and PDF exports use the currency in which that report was calculated. Change the **Timeframe** on the report to look at another period without editing it, and choose **Use saved timeframe** to go back. A report that reaches the row limit says so and asks you to narrow the timeframe or filters.
 
 Click a row, bar, slice or legend entry to open the Transactions page over the report's date range with the report's own account, category, payee, tag and search filters applied:
 

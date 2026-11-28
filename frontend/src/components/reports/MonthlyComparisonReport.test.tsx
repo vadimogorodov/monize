@@ -169,6 +169,39 @@ describe('MonthlyComparisonReport', () => {
     vi.clearAllMocks();
   });
 
+  it('keeps the monetary expense change visible when the baseline was a net refund', async () => {
+    mockGetMonthlyComparison.mockResolvedValue({
+      ...mockResponse,
+      incomeExpenses: { ...mockResponse.incomeExpenses, currentExpenses: 10, previousExpenses: -20, expensesChange: 30, expensesChangePercent: null },
+    });
+    render(<MonthlyComparisonReport />);
+    expect(await screen.findByText('+$30.00')).toBeInTheDocument();
+    expect(screen.queryByText('+150.0%')).not.toBeInTheDocument();
+  });
+
+  it('discloses incomplete monthly spending in the summary and exported PDF', async () => {
+    const partial = { missingCurrencies: ['JPY'], knownIncome: 0, knownExpenses: 12, knownSavings: -12 };
+    mockGetMonthlyComparison.mockResolvedValue({
+      ...mockResponse,
+      incomeExpenses: { ...mockResponse.incomeExpenses, currentIncome: null, currentExpenses: null, currentSavings: null,
+        incomeChange: null, expensesChange: null, savingsChange: null, incomeChangePercent: null, expensesChangePercent: null, savingsChangePercent: null, currentPartial: partial },
+      expenses: { ...mockResponse.expenses, currentTotal: null, currentPartial: { missingCurrencies: ['JPY'], knownSpending: 12 },
+        comparison: [{ ...mockResponse.expenses.comparison[0], currentTotal: 12, change: null, changePercent: null }] },
+    });
+    render(<MonthlyComparisonReport />);
+    expect(await screen.findByText(/no exchange rate for JPY/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/\$12 .*partial/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/you saved/i)).not.toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /export/i })); });
+    await act(async () => { fireEvent.click(screen.getByText(/PDF/i)); });
+    const { exportToPdf } = await import('@/lib/pdf-export');
+    const pdf = vi.mocked(exportToPdf).mock.calls[0][0];
+    expect(pdf.description).toMatch(/no exchange rate for JPY/i);
+    expect(pdf.description).not.toMatch(/you saved/i);
+    expect(pdf.tableData?.rows[0]).toEqual(['Groceries', '$12.00 (partial)', '$700.00', 'N/A', 'N/A']);
+    expect(pdf.summaryCards).toContainEqual(expect.objectContaining({ label: 'Expenses', value: expect.stringMatching(/12 .*partial/i) }));
+  });
+
   it('shows loading state initially', () => {
     mockGetMonthlyComparison.mockReturnValue(new Promise(() => {}));
     render(<MonthlyComparisonReport />);

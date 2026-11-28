@@ -983,6 +983,19 @@ export class ReportsService {
     }>,
     textSearches: Map<string, ParsedSearch | undefined>,
   ): void {
+    // A posting may satisfy different AND groups with different tags. Keep
+    // the joined tags for the result rows, and test membership on the same
+    // posting independently of which matching tag is currently hydrated.
+    const tagGroups = filterGroups
+      .map((group) =>
+        (group.conditions ?? [])
+          .filter((condition) => condition.field === "tag")
+          .flatMap((condition) => condition.value)
+          .filter(Boolean),
+      )
+      .filter((ids) => ids.length > 0);
+    const joinedTagIds = [...new Set(tagGroups.flat())];
+
     for (let gi = 0; gi < filterGroups.length; gi++) {
       const group = filterGroups[gi];
       if (!group.conditions || group.conditions.length === 0) continue;
@@ -1060,31 +1073,24 @@ export class ReportsService {
                 const values = Array.isArray(condition.value)
                   ? condition.value
                   : [condition.value];
-                if (values.length === 1) {
-                  qb[method](
-                    new Brackets((inner) => {
-                      inner
-                        .where(`tags.id = :${param}`, {
-                          [param]: values[0],
-                        })
-                        .orWhere(`splitTags.id = :${param}`, {
-                          [param]: values[0],
-                        });
-                    }),
-                  );
-                } else if (values.length > 1) {
-                  qb[method](
-                    new Brackets((inner) => {
-                      inner
-                        .where(`tags.id IN (:...${param})`, {
-                          [param]: values,
-                        })
-                        .orWhere(`splitTags.id IN (:...${param})`, {
-                          [param]: values,
-                        });
-                    }),
-                  );
+                if (!values.length) break;
+                const matchesJoined = (ids: string) =>
+                  `(tags.id IN (:...${ids}) OR splitTags.id IN (:...${ids}))`;
+                if (tagGroups.length < 2) {
+                  qb[method](matchesJoined(param), { [param]: values });
+                  break;
                 }
+                qb[method](
+                  `(${matchesJoined("reportJoinedTagIds")} AND (
+                    EXISTS (SELECT 1 FROM transaction_tags ttag
+                            WHERE ttag.transaction_id = transaction.id
+                              AND ttag.tag_id IN (:...${param}))
+                    OR EXISTS (SELECT 1 FROM transaction_split_tags stag
+                               WHERE stag.transaction_split_id = splits.id
+                                 AND stag.tag_id IN (:...${param}))
+                  ))`,
+                  { [param]: values, reportJoinedTagIds: joinedTagIds },
+                );
                 break;
               }
               case "text": {
@@ -1373,12 +1379,13 @@ export class ReportsService {
     categoryMap: Map<string, Category>,
     conv: RowConverter,
   ): ReportRow[] {
+    const budgetVariance = metric === MetricType.BUDGET_VARIANCE;
     const cells = createNetCells(
       config.direction,
       metric,
       this.leftOutWithItsPart(conv),
       this.inAFigure(conv),
-      !!config.transferMeasure,
+      !!config.transferMeasure || budgetVariance,
     );
     // An embedded investment line carries no category by definition, so
     // `netLinesOf` leaves it out: counting it here filed a securities purchase
@@ -1393,7 +1400,7 @@ export class ReportsService {
       }
     }
     const dataMap = cells.settle(
-      metric === MetricType.BUDGET_VARIANCE
+      budgetVariance
         ? (id) => {
             const type = categoryTypeOfOrUndefined(categoryMap.get(id));
             return type === undefined ? undefined : type === "income";
@@ -1419,16 +1426,21 @@ export class ReportsService {
           ? // Legs holding no category, never ordinary uncategorized rows.
             "No category"
           : "Uncategorized";
+      // Keep a category with unpriced spending distinct from a budget with no activity.
+      const actualIncomplete = budgetVariance && data.incomplete;
       result.push({
         point: {
           id: categoryId,
           label,
-          ...this.groupFigure(data, metric, conv, config),
+          ...(actualIncomplete
+            ? { value: null, incomplete: true as const }
+            : this.groupFigure(data, metric, conv, config)),
           color: category?.color || undefined,
-          percentage: whole && shareOf(data.agg, whole),
+          percentage:
+            actualIncomplete || !whole ? undefined : shareOf(data.agg, whole),
           count: data.count,
         },
-        sum: data.agg,
+        sum: actualIncomplete ? null : data.agg,
       });
     }
 
@@ -1456,12 +1468,13 @@ export class ReportsService {
       // cells are read per ordinary line; a parent with none adds nothing.
       const lines = netLinesOf(tx, false, !!config.transferMeasure);
       if (lines.length === 0) continue;
-      const payeeId = tx.payeeId || "unknown";
+      const groupKey =
+        tx.payeeId ?? (tx.payeeName ? `name:${tx.payeeName}` : "unknown");
       for (const line of lines) {
-        cells.add(payeeId, line, conv.convert(line.amount, tx, line.split));
+        cells.add(groupKey, line, conv.convert(line.amount, tx, line.split));
       }
-      if (!payeeNames.has(payeeId) && tx.payeeName) {
-        payeeNames.set(payeeId, tx.payeeName);
+      if (!payeeNames.has(groupKey) && tx.payeeName) {
+        payeeNames.set(groupKey, tx.payeeName);
       }
     }
     const dataMap = cells.settle();
@@ -1471,12 +1484,12 @@ export class ReportsService {
     const whole = shareDenominator(dataMap, config);
 
     const result: ReportRow[] = [];
-    for (const [payeeId, data] of dataMap) {
-      const payee = payeeMap.get(payeeId);
+    for (const [groupKey, data] of dataMap) {
+      const payee = payeeMap.get(groupKey);
       result.push({
         point: {
-          id: payeeId,
-          label: payee?.name || payeeNames.get(payeeId) || "Unknown",
+          id: groupKey,
+          label: payee?.name || payeeNames.get(groupKey) || "Unknown",
           ...this.groupFigure(data, metric, conv, config),
           percentage: whole && shareOf(data.agg, whole),
           count: data.count,
@@ -1677,7 +1690,7 @@ export class ReportsService {
       // In the reporting currency at the rate on the window's last day: a plan
       // has no date of its own, and the actuals it is set against are each
       // converted at theirs. A budget currency with no rate leaves its
-      // categories unenriched and records the gap in the report's own gaps.
+      // categories with unknown variances and records the gap in the report.
       const budgetBasis = transactionRateBasis(
         { currencyCode: budget.currencyCode, transactionDate: endDate },
         conv.currency,
@@ -1686,8 +1699,7 @@ export class ReportsService {
         [budgetBasis],
         conv.currency,
       );
-      const budgetMap = new Map<string, number>();
-      const unconvertible = new Set<string>();
+      const budgetMap = new Map<string, number | null>();
       const narrowed =
         config.direction !== DirectionFilter.BOTH ||
         (filters?.accountIds?.length ?? 0) > 0 ||
@@ -1711,8 +1723,9 @@ export class ReportsService {
             amount === 0 ? 0 : convertBudget(amount, budgetBasis);
           if (converted === null) {
             conv.gaps.record(budget.currencyCode);
-            unconvertible.add(bc.categoryId);
-          } else budgetMap.set(bc.categoryId, converted);
+          }
+          if (budgetMap.get(bc.categoryId) !== null)
+            budgetMap.set(bc.categoryId, converted);
         }
       }
 
@@ -1721,10 +1734,27 @@ export class ReportsService {
       const enriched = data.map((row): ReportRow => {
         const { point, sum } = row;
         const id = point.id || "";
-        if (unconvertible.has(id) || point.value === null || sum === null) {
-          return row;
+        const planned = budgetMap.get(id);
+        if (planned === null) {
+          // Preserve an independently valued actual while the plan is unpriced.
+          return {
+            point: {
+              ...point,
+              actual: point.value ?? undefined,
+              value: null,
+              incomplete: true,
+              percentage: undefined,
+            },
+            sum: null,
+          };
         }
-        const budgeted = budgetMap.get(id) ?? 0;
+        const budgeted = planned ?? 0;
+        if (point.value === null || sum === null) {
+          return {
+            point: { ...point, budgeted: reportFigure(budgeted, conv.places) },
+            sum: null,
+          };
+        }
         const variance = new FxAggregate();
         variance.merge(sum);
         variance.addConverted(-budgeted);
@@ -1751,8 +1781,8 @@ export class ReportsService {
       for (const [categoryId, budgeted] of budgetMap) {
         const category = categoryMap.get(categoryId);
         if (seen.has(categoryId) || !category) continue;
-        const sum = new FxAggregate();
-        sum.addConverted(-budgeted);
+        const sum = budgeted === null ? null : new FxAggregate();
+        if (budgeted !== null) sum?.addConverted(-budgeted);
         enriched.push({
           point: {
             id: categoryId,
@@ -1764,11 +1794,15 @@ export class ReportsService {
                   }
                 : category,
             ) as string,
-            value: sum.knownSubtotalAt(conv.places),
+            value: sum?.knownSubtotalAt(conv.places) ?? null,
+            incomplete: budgeted === null ? true : undefined,
             color: category.color || undefined,
-            percentage: zeroShare,
+            percentage: budgeted === null ? undefined : zeroShare,
             count: 0,
-            budgeted: reportFigure(budgeted, conv.places),
+            budgeted:
+              budgeted === null
+                ? undefined
+                : reportFigure(budgeted, conv.places),
             actual: 0,
           },
           sum,

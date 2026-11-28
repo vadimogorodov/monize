@@ -11,3 +11,5 @@ Monthly Spending Trend, the assistant’s category breakdown and period totals, 
 The top and ranked category trivia sentences state a percentage as well as the category name and amount. They require a complete positive composition with a defined share. When refunds make shares unavailable, the signed table still shows the category and amount.
 
 See the [examples and test plan](../future-plans/category-spending-signs.md) and [discussion #2404](https://github.com/kenlasko/monize/discussions/2404).
+
+Monthly Comparison keeps the money change of +30 when net expenses move from −20 to +10; its headline and category row both have no percentage. If one month contains spending that cannot be converted, the report carries its known subtotal and missing currencies and withholds changes and savings commentary. At a restored rate of 0.5, a foreign expense of 40 compares equally with a prior expense of 20 in the report currency.

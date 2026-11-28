@@ -17,12 +17,30 @@ export class CategorySpendingComparisonItem {
   @ApiProperty()
   previousTotal: number;
 
-  @ApiProperty()
-  change: number;
+  @ApiProperty({ type: Number, nullable: true })
+  change: number | null;
 
   /** A new net credit has no percentage change against a previous zero. */
   @ApiProperty({ type: Number, nullable: true })
   changePercent: number | null;
+}
+
+export class PartialMonthFlows {
+  @ApiProperty({ type: [String] })
+  missingCurrencies: string[];
+  @ApiProperty()
+  knownIncome: number;
+  @ApiProperty()
+  knownExpenses: number;
+  @ApiProperty()
+  knownSavings: number;
+}
+
+export class PartialMonthSpending {
+  @ApiProperty({ type: [String] })
+  missingCurrencies: string[];
+  @ApiProperty()
+  knownSpending: number;
 }
 
 export class MonthlyComparisonIncomeExpenses {
@@ -32,49 +50,55 @@ export class MonthlyComparisonIncomeExpenses {
   @ApiProperty()
   previousMonth: string;
 
-  @ApiProperty()
-  currentIncome: number;
+  @ApiProperty({ type: Number, nullable: true })
+  currentIncome: number | null;
 
-  @ApiProperty()
-  previousIncome: number;
+  @ApiProperty({ type: Number, nullable: true })
+  previousIncome: number | null;
 
-  @ApiProperty()
-  incomeChange: number;
+  @ApiProperty({ type: Number, nullable: true })
+  incomeChange: number | null;
 
-  @ApiProperty()
-  incomeChangePercent: number;
+  @ApiProperty({ type: Number, nullable: true })
+  incomeChangePercent: number | null;
 
-  @ApiProperty()
-  currentExpenses: number;
+  @ApiProperty({ type: Number, nullable: true })
+  currentExpenses: number | null;
 
-  @ApiProperty()
-  previousExpenses: number;
+  @ApiProperty({ type: Number, nullable: true })
+  previousExpenses: number | null;
 
-  @ApiProperty()
-  expensesChange: number;
+  @ApiProperty({ type: Number, nullable: true })
+  expensesChange: number | null;
 
-  @ApiProperty()
-  expensesChangePercent: number;
+  @ApiProperty({ type: Number, nullable: true })
+  expensesChangePercent: number | null;
 
-  @ApiProperty()
-  currentSavings: number;
+  @ApiProperty({ type: Number, nullable: true })
+  currentSavings: number | null;
 
-  @ApiProperty()
-  previousSavings: number;
+  @ApiProperty({ type: Number, nullable: true })
+  previousSavings: number | null;
 
-  @ApiProperty()
-  savingsChange: number;
+  @ApiProperty({ type: Number, nullable: true })
+  savingsChange: number | null;
 
-  @ApiProperty()
-  savingsChangePercent: number;
+  @ApiProperty({ type: Number, nullable: true })
+  savingsChangePercent: number | null;
+
+  @ApiPropertyOptional({ type: PartialMonthFlows })
+  currentPartial?: PartialMonthFlows;
+
+  @ApiPropertyOptional({ type: PartialMonthFlows })
+  previousPartial?: PartialMonthFlows;
 }
 
 export class MonthlyComparisonNotes {
-  @ApiProperty()
-  savingsNote: string;
+  @ApiProperty({ type: String, nullable: true })
+  savingsNote: string | null;
 
-  @ApiProperty()
-  incomeNote: string;
+  @ApiProperty({ type: String, nullable: true })
+  incomeNote: string | null;
 }
 
 export class CategorySpendingSnapshot {
@@ -109,11 +133,17 @@ export class MonthlyComparisonExpenses {
   @ApiProperty({ type: [CategorySpendingComparisonItem] })
   comparison: CategorySpendingComparisonItem[];
 
-  @ApiProperty()
-  currentTotal: number;
+  @ApiProperty({ type: Number, nullable: true })
+  currentTotal: number | null;
 
-  @ApiProperty()
-  previousTotal: number;
+  @ApiProperty({ type: Number, nullable: true })
+  previousTotal: number | null;
+
+  @ApiPropertyOptional({ type: PartialMonthSpending })
+  currentPartial?: PartialMonthSpending;
+
+  @ApiPropertyOptional({ type: PartialMonthSpending })
+  previousPartial?: PartialMonthSpending;
 }
 
 export class TopCategoriesComparison {

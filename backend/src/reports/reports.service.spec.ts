@@ -1510,29 +1510,83 @@ describe("ReportsService", () => {
         expect(result.data[0].value).toBe(-20);
       });
 
-      it("labels unknown payees from payeeName field", async () => {
-        const transactions = [
-          createMockTransaction({
-            id: "tx-1",
-            payeeId: null,
-            payeeName: "Cash Payment",
-            amount: -25,
-          }),
-        ];
+      it("reports each free-text payee with its own signed total", async () => {
         setupExecuteMocks(
           {
             groupBy: GroupByType.PAYEE,
             config: { ...defaultConfig, metric: MetricType.TOTAL_AMOUNT },
           },
-          transactions,
+          [
+            createMockTransaction({
+              id: "a",
+              payeeId: null,
+              payeeName: "Shop A",
+              amount: -25,
+            }),
+            createMockTransaction({
+              id: "b",
+              payeeId: null,
+              payeeName: "Shop B",
+              amount: -10,
+            }),
+          ],
         );
-        payeesRepository.find.mockResolvedValue([]);
 
         const result = await service.execute("user-1", "report-1");
 
-        expect(result.data).toHaveLength(1);
-        expect(result.data[0].id).toBe("unknown");
-        expect(result.data[0].label).toBe("Cash Payment");
+        expect(result.data).toMatchObject([
+          { label: "Shop B", value: -10 },
+          { label: "Shop A", value: -25 },
+        ]);
+        expect(result.summary.total).toBe(-35);
+      });
+
+      it("combines matching free-text names separately from linked and unnamed payees", async () => {
+        setupExecuteMocks(
+          {
+            groupBy: GroupByType.PAYEE,
+            config: { ...defaultConfig, metric: MetricType.TOTAL_AMOUNT },
+          },
+          [
+            createMockTransaction({
+              id: "a",
+              payeeId: null,
+              payeeName: "unknown",
+              amount: -25,
+            }),
+            createMockTransaction({
+              id: "b",
+              payeeId: null,
+              payeeName: "unknown",
+              amount: -10,
+            }),
+            createMockTransaction({
+              id: "c",
+              payeeId: "payee-1",
+              payeeName: "unknown",
+              amount: -7,
+            }),
+            createMockTransaction({
+              id: "d",
+              payeeId: null,
+              payeeName: "",
+              amount: -3,
+            }),
+          ],
+        );
+        payeesRepository.find.mockResolvedValue([
+          { ...mockPayee, name: "unknown" },
+        ]);
+
+        const result = await service.execute("user-1", "report-1");
+
+        expect(result.data).toMatchObject([
+          { id: "unknown", label: "Unknown", value: -3 },
+          { id: "payee-1", label: "unknown", value: -7 },
+          { label: "unknown", value: -35, count: 2 },
+        ]);
+        expect(new Set(result.data.map((row) => row.id)).size).toBe(3);
+        expect(result.summary.total).toBe(-45);
       });
 
       it("labels completely unknown payees as Unknown", async () => {
@@ -5757,7 +5811,7 @@ describe("ReportsService", () => {
         expect(groceries!.value).toBe(-20);
       });
 
-      it("leaves a budget with no rate unenriched and withholds the total", async () => {
+      it("withholds an unpriced variance while keeping its actual separate", async () => {
         setupExecuteMocks(
           {
             groupBy: GroupByType.CATEGORY,
@@ -5779,9 +5833,96 @@ describe("ReportsService", () => {
 
         const groceries = result.data.find((d) => d.label === "Groceries");
         expect(groceries!.budgeted).toBeUndefined();
-        expect(groceries!.value).toBe(80);
+        expect(groceries!.actual).toBe(80);
+        expect(groceries!.value).toBeNull();
+        expect(groceries!.incomplete).toBe(true);
+        expect(result.summary.knownTotal).toBe(0);
         expect(result.summary.total).toBeNull();
         expect(result.missingCurrencies).toEqual(["JPY"]);
+      });
+
+      it.each([
+        ["JPY", false],
+        ["JPY", true],
+        ["USD", false],
+        ["USD", true],
+      ] as const)(
+        "withholds an unpriced actual with a %s plan and a priced sibling: %s",
+        async (planCurrency, hasPricedSibling) => {
+          const items = [
+            createMockTransaction({
+              id: "foreign",
+              categoryId: "cat-1",
+              currencyCode: "JPY",
+              amount: -800,
+            }),
+          ];
+          if (hasPricedSibling) {
+            items.push(
+              createMockTransaction({
+                id: "local",
+                categoryId: "cat-1",
+                amount: -40,
+              }),
+            );
+          }
+          setupExecuteMocks(
+            {
+              groupBy: GroupByType.CATEGORY,
+              timeframeType: TimeframeType.LAST_MONTH,
+              config: {
+                ...defaultConfig,
+                direction: DirectionFilter.BOTH,
+                metric: MetricType.BUDGET_VARIANCE,
+              },
+            },
+            items,
+          );
+          categoriesRepository.find.mockResolvedValue([mockCategory]);
+          budgetOf(
+            [{ categoryId: "cat-1", amount: 100, isIncome: false }],
+            planCurrency,
+          );
+
+          const result = await service.execute("user-1", "report-1");
+          const row = result.data.find((point) => point.id === "cat-1");
+          expect(row).toMatchObject({ value: null, incomplete: true });
+          expect(row!.actual).toBeUndefined();
+          expect(row!.budgeted).toBe(planCurrency === "USD" ? 100 : undefined);
+          expect(result.summary.total).toBeNull();
+          expect(result.summary.knownTotal).toBe(0);
+        },
+      );
+
+      it("keeps a category with an unpriced plan and no spending in scope", async () => {
+        setupExecuteMocks(
+          {
+            groupBy: GroupByType.CATEGORY,
+            timeframeType: TimeframeType.LAST_MONTH,
+            config: {
+              ...defaultConfig,
+              direction: DirectionFilter.BOTH,
+              metric: MetricType.BUDGET_VARIANCE,
+            },
+          },
+          [],
+        );
+        categoriesRepository.find.mockResolvedValue([mockCategory]);
+        budgetOf([{ categoryId: "cat-1", amount: 50, isIncome: false }], "JPY");
+
+        const result = await service.execute("user-1", "report-1");
+
+        expect(result.data).toContainEqual(
+          expect.objectContaining({
+            id: "cat-1",
+            actual: 0,
+            value: null,
+            incomplete: true,
+            count: 0,
+          }),
+        );
+        expect(result.summary.total).toBeNull();
+        expect(result.summary.knownTotal).toBe(0);
       });
     });
     describe("additional sorting columns", () => {

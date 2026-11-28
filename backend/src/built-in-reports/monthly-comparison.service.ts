@@ -148,29 +148,71 @@ export class MonthlyComparisonService {
     // and each change the difference of the two months' aggregates read once:
     // the difference of the two readings could sit a unit off the exact
     // change (rule 4).
+    // The source excludes unpriced rows before building the period aggregates.
+    // Read completeness from each requested window, including an all-unpriced one.
+    const partialFlows = (
+      missingCurrencies: string[] | undefined,
+      monthFlows: IncomeExpensePeriodAggregates,
+      savings: FxAggregate,
+    ) =>
+      missingCurrencies?.length
+        ? {
+            missingCurrencies,
+            knownIncome: monthFlows.income.knownSubtotalAt(places),
+            knownExpenses: monthFlows.expenses.knownSubtotalAt(places),
+            knownSavings: savings.knownSubtotalAt(places),
+          }
+        : undefined;
+    const currentPartial = partialFlows(
+      currentIncExp.response.missingCurrencies,
+      cur,
+      currentSavings,
+    );
+    const previousPartial = partialFlows(
+      previousIncExp.response.missingCurrencies,
+      prev,
+      previousSavings,
+    );
+    const comparable = !currentPartial && !previousPartial;
     const incomeExpenses: MonthlyComparisonIncomeExpenses = {
+      currentPartial,
+      previousPartial,
       currentMonth: month,
       previousMonth: previousMonthStr,
-      currentIncome: cur.income.knownSubtotalAt(places),
-      previousIncome: prev.income.knownSubtotalAt(places),
-      incomeChange: this.change(cur.income, prev.income, places),
-      incomeChangePercent: this.percentChange(prev.income, cur.income, places),
-      currentExpenses: cur.expenses.knownSubtotalAt(places),
-      previousExpenses: prev.expenses.knownSubtotalAt(places),
-      expensesChange: this.change(cur.expenses, prev.expenses, places),
-      expensesChangePercent: this.percentChange(
-        prev.expenses,
-        cur.expenses,
-        places,
-      ),
-      currentSavings: currentSavings.knownSubtotalAt(places),
-      previousSavings: previousSavings.knownSubtotalAt(places),
-      savingsChange: this.change(currentSavings, previousSavings, places),
-      savingsChangePercent: this.percentChange(
-        previousSavings,
-        currentSavings,
-        places,
-      ),
+      currentIncome: currentPartial ? null : cur.income.knownSubtotalAt(places),
+      previousIncome: previousPartial
+        ? null
+        : prev.income.knownSubtotalAt(places),
+      incomeChange: !comparable
+        ? null
+        : this.change(cur.income, prev.income, places),
+      incomeChangePercent: !comparable
+        ? null
+        : this.percentChange(prev.income, cur.income, places),
+      currentExpenses: currentPartial
+        ? null
+        : cur.expenses.knownSubtotalAt(places),
+      previousExpenses: previousPartial
+        ? null
+        : prev.expenses.knownSubtotalAt(places),
+      expensesChange: !comparable
+        ? null
+        : this.change(cur.expenses, prev.expenses, places),
+      expensesChangePercent: !comparable
+        ? null
+        : this.spendingPercent(prev.expenses, cur.expenses, places),
+      currentSavings: currentPartial
+        ? null
+        : currentSavings.knownSubtotalAt(places),
+      previousSavings: previousPartial
+        ? null
+        : previousSavings.knownSubtotalAt(places),
+      savingsChange: !comparable
+        ? null
+        : this.change(currentSavings, previousSavings, places),
+      savingsChangePercent: !comparable
+        ? null
+        : this.percentChange(previousSavings, currentSavings, places),
     };
 
     // Build month labels
@@ -263,6 +305,15 @@ export class MonthlyComparisonService {
   ): MonthlyComparisonNotes {
     const fmt = (amount: number) => n.formatCurrency(amount, currency);
 
+    if (
+      ie.savingsChangePercent === null ||
+      ie.currentSavings === null ||
+      ie.currentIncome === null ||
+      ie.incomeChange === null
+    ) {
+      return { savingsNote: null, incomeNote: null };
+    }
+
     const savingsDirection =
       direction.savings >= 0
         ? `${n.formatPercent(Math.abs(ie.savingsChangePercent), 1)} more`
@@ -329,6 +380,17 @@ export class MonthlyComparisonService {
       }
     }
 
+    const partial = ({ response }: SpendingWithAggregates) =>
+      response.totalSpending === null
+        ? {
+            knownSpending: response.knownSpending,
+            missingCurrencies: response.missingCurrencies,
+          }
+        : undefined;
+    const currentPartial = partial(current);
+    const previousPartial = partial(previous);
+    const comparable = !currentPartial && !previousPartial;
+
     const comparison: CategorySpendingComparisonItem[] = Array.from(
       allCategories.values(),
     )
@@ -338,13 +400,10 @@ export class MonthlyComparisonService {
         color: c.color,
         currentTotal: c.current.knownSubtotalAt(places),
         previousTotal: c.previous.knownSubtotalAt(places),
-        change: this.change(c.current, c.previous, places),
-        // A net credit in the prior month provides no spending baseline.
-        changePercent:
-          c.previous.sign < 0 ||
-          (c.previous.knownSubtotalAt(places) === 0 && c.current.sign < 0)
-            ? null
-            : this.percentChange(c.previous, c.current, places),
+        change: comparable ? this.change(c.current, c.previous, places) : null,
+        changePercent: comparable
+          ? this.spendingPercent(c.previous, c.current, places)
+          : null,
       }))
       .sort((a, b) => b.currentTotal - a.currentTotal);
 
@@ -356,8 +415,10 @@ export class MonthlyComparisonService {
       currentMonth: currentData,
       previousMonth: previousData,
       comparison,
-      currentTotal: current.response.knownSpending,
-      previousTotal: previous.response.knownSpending,
+      currentTotal: current.response.totalSpending,
+      previousTotal: previous.response.totalSpending,
+      currentPartial,
+      previousPartial,
     };
   }
 
@@ -570,6 +631,19 @@ export class MonthlyComparisonService {
           10000,
       ) / 100
     );
+  }
+
+  private spendingPercent(
+    previous: FxAggregate,
+    current: FxAggregate,
+    places: number,
+  ): number | null {
+    if (
+      previous.sign < 0 ||
+      (previous.knownSubtotalAt(places) === 0 && current.sign < 0)
+    )
+      return null;
+    return this.percentChange(previous, current, places);
   }
 
   private formatMonthLabel(year: number, month: number): string {

@@ -84,6 +84,7 @@ import { Account } from "../accounts/entities/account.entity";
 import { PayeesService } from "../payees/payees.service";
 import { NetWorthService } from "../net-worth/net-worth.service";
 import { TransactionSplitService } from "./transaction-split.service";
+import { ownRowIds, removedBetween } from "./remove-transaction-leg";
 import {
   applyRegisterOrder,
   creditsBeforeDebitsDirection,
@@ -562,6 +563,11 @@ export interface DeleteTransactionPreview {
    * it, never the split itself.
    */
   splitLine?: { payeeName: string | null; transactionDate: string };
+  /**
+   * Set when the target is one leg of a plain transfer: the delete removes the
+   * transfer's other leg too, in the other account.
+   */
+  transferPair?: true;
 }
 
 export { TransferResult };
@@ -1955,6 +1961,9 @@ export class TransactionsService {
               transactionDate: splitParent.transactionDate,
             },
           }
+        : {}),
+      ...(existing.isTransfer && existing.linkedTransactionId && !splitParent
+        ? { transferPair: true as const }
         : {}),
       accountName: existing.account?.name ?? "",
       amount: Number(existing.amount),
@@ -4510,8 +4519,14 @@ export class TransactionsService {
         accountIds: Set<string>;
         securityIds: Set<string>;
       };
+      /**
+       * Return the ids this delete removed (the row, a split parent's legs, a
+       * leg's parent). Off by default: it costs three reads inside the
+       * transaction, and only the AI and MCP selections use the answer.
+       */
+      reportRemoved?: boolean;
     },
-  ): Promise<void> {
+  ): Promise<string[]> {
     const transaction = await this.findOne(userId, id);
     const beforeSnapshot = this.snapshotTransaction(transaction);
     // Every account this deletion moves, not only the selected row's, so the
@@ -4523,6 +4538,9 @@ export class TransactionsService {
     // fan-out (RR5-002 must not undo the P4-002 locked-account guarantee).
     const affectedAccountIds = new Set<string>();
     const touchedSecurityIds = new Set<string>();
+    // What this delete removed: the own rows before and after, read inside the
+    // transaction under the locks below (returned to the caller).
+    let removedIds: string[] = [];
 
     // One transaction: split side effects, linked/parent cleanup, the delete
     // itself, and the balance adjustment commit or roll back together.
@@ -4591,6 +4609,27 @@ export class TransactionsService {
       // have moved the row, and the balance reversal below uses locked.accountId.
       affectedAccountIds.add(locked.accountId);
 
+      // Every row this delete can take with it, snapshotted under the lock: a
+      // split parent's transfer legs, or, for a leg, its parent and the
+      // parent's other legs.
+      // Only read when the caller asked for the ids (`reportRemoved`).
+      const splitOwnerId = locked.isSplit ? id : parentSplit?.transactionId;
+      const candidateIds = new Set<string>([id]);
+      if (options?.reportRemoved && splitOwnerId) {
+        candidateIds.add(splitOwnerId);
+        for (const line of await m.find(TransactionSplit, {
+          where: { transactionId: splitOwnerId },
+          select: { id: true, linkedTransactionId: true },
+        })) {
+          if (line.linkedTransactionId) {
+            candidateIds.add(line.linkedTransactionId);
+          }
+        }
+      }
+      const rowsBefore = options?.reportRemoved
+        ? await ownRowIds(m, userId, candidateIds)
+        : new Set<string>();
+
       if (locked.isSplit) {
         // Transfer-target and brokerage accounts this split's cleanup moved join
         // the set invalidated after commit (recheck RR5-002).
@@ -4614,6 +4653,12 @@ export class TransactionsService {
       }
 
       const deleted = await m.delete(Transaction, { id, userId });
+      if (options?.reportRemoved) {
+        removedIds = removedBetween(
+          rowsBefore,
+          await ownRowIds(m, userId, rowsBefore),
+        );
+      }
       if ((deleted.affected ?? 0) === 0) {
         // The row was removed by the parent cleanup above (a split counterpart
         // cascade). Reversing its amount again would double-count.
@@ -4649,13 +4694,14 @@ export class TransactionsService {
         securityIds: touchedSecurityIds,
       });
     }
-    if (options?.recordHistory === false) return;
+    if (options?.recordHistory === false) return removedIds;
     this.recordTransactionAction(
       userId,
       { ...transaction, ...beforeSnapshot } as Transaction,
       "delete",
       beforeSnapshot,
     );
+    return removedIds;
   }
 
   /**
@@ -5274,7 +5320,7 @@ export class TransactionsService {
     userId: string,
     transactionId: string,
     actor?: TransferActor,
-  ): Promise<void> {
+  ): Promise<string[]> {
     // The receiving leg of a split transfer is one line of the split, not a
     // whole transfer: remove that line and re-total the parent, leaving the
     // parent and its other lines in place (kenlasko/monize#2366).
@@ -5302,7 +5348,7 @@ export class TransactionsService {
     // writes. An entry goes to the owner of each leg it removed: a frozen
     // cross-owner delete removes the actor's leg only.
     let before: ReadonlyMap<string, TransferLegSnapshot> | undefined;
-    await this.transferService.removeTransfer(
+    const removed = await this.transferService.removeTransfer(
       userId,
       transactionId,
       async (uid: string, id: string) => {
@@ -5315,6 +5361,7 @@ export class TransactionsService {
       actor,
     );
     await this.recordTransferChange(userId, before, "deleted", "delete");
+    return removed;
   }
 
   /**
@@ -5324,12 +5371,21 @@ export class TransactionsService {
    * manage_transactions delete all land here, where the caller does not know
    * up front whether the target is a transfer. Like removeTransfer it records
    * a delete entry whose undo is refused (INV-TRANSFER-001).
+   *
+   * With `reportRemoved`, returns the ids this delete removed, from the
+   * delete's own transaction under its locks: the row and whatever went with
+   * it (a transfer's mirror, a split parent's transfer legs). Never another
+   * owner's row. A caller deleting a selection row by row skips a selected id
+   * already in the union of these, so the second leg of a transfer is not
+   * deleted twice (a 404 after the first delete wrote). A mirror that was not
+   * removed is not reported. Without it the result is empty.
    */
   async removeAny(
     userId: string,
     transactionId: string,
     actor?: TransferActor,
-  ): Promise<void> {
+    options?: { reportRemoved?: boolean },
+  ): Promise<string[]> {
     // Only the two columns the routing needs; a miss falls through to
     // remove(), whose findOne throws the not-found error.
     const row = await withScopedDb(this.dataSource, (m) =>
@@ -5338,10 +5394,13 @@ export class TransactionsService {
         select: ["id", "isTransfer", "linkedTransactionId"],
       }),
     );
-    if (row?.isTransfer && row.linkedTransactionId) {
-      return this.removeTransfer(userId, transactionId, actor);
-    }
-    return this.remove(userId, transactionId);
+    const removed =
+      row?.isTransfer && row.linkedTransactionId
+        ? await this.removeTransfer(userId, transactionId, actor)
+        : options?.reportRemoved
+          ? await this.remove(userId, transactionId, { reportRemoved: true })
+          : await this.remove(userId, transactionId);
+    return options?.reportRemoved ? removed : [];
   }
 
   /**
@@ -5652,9 +5711,9 @@ export class TransactionsService {
   async getLlmTransactionRows(
     userId: string,
     filters: {
-      accountId?: string;
-      categoryId?: string;
-      payeeId?: string;
+      accountIds?: string[];
+      categoryIds?: string[];
+      payeeIds?: string[];
       startDate?: string;
       endDate?: string;
       query?: string;
@@ -5677,11 +5736,11 @@ export class TransactionsService {
     // from the parent total) so a split row outside the range is not shown.
     const result = await this.findAll(
       userId,
-      filters.accountId ? [filters.accountId] : undefined,
+      filters.accountIds,
       filters.startDate,
       filters.endDate,
-      filters.categoryId ? [filters.categoryId] : undefined,
-      filters.payeeId ? [filters.payeeId] : undefined,
+      filters.categoryIds,
+      filters.payeeIds,
       1,
       limit,
       false,

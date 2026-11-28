@@ -121,6 +121,8 @@ Four cards at the top provide an at-a-glance overview:
 
 Purchases add to **Spent** and refunds in the same expense category reduce it. For a budget of 100, a purchase of 100 and a refund of 150 show **Spent −50** and **Remaining 150**. An ordinary income line likewise shows negative income if reversals exceed receipts. Open periods use these signed figures, and closing a period records them. Previously closed periods keep their saved figures.
 
+If a transaction is in a currency with no exchange rate to the budget currency, Monize cannot work out the figures that depend on it. **Spent**, **Remaining**, **Savings**, the percentage, the health score, the safe daily spend and the category lines that include it show an unknown marker instead of a number. Point at the marker to see the missing currency pair. The dashboard widget lists those categories apart and does not rank them. On an income-linked budget the same applies when the income has no rate: **Total Budget** and the percentage lines are unknown, because they are a share of that income. Add the rate on the Currencies page to see the figures again.
+
 ### Health Score
 
 A circular gauge from 0 to 100 summarizing how well you are sticking to your budget.
@@ -404,7 +406,7 @@ Once a budget has more than one period, a **Period:** selector appears at the to
 - **Total Budgeted**, **Total Spent**, and whether you finished **Under Budget** or **Over Budget**, plus **Income**
 - A **Rollover Summary** of the amounts carried in and carried out
 - For a Bucket budget, a **Buckets** table listing each bucket's **Target**, **Allocated**, **Carried in**, **Spent** and **Carried out**
-- **Overall Budget Usage**
+- **Overall Budget Usage** shows the share spent when effective funding is positive. If funding is zero or negative, the period and category still show their monetary amounts and remaining balance.
 - The final actual amount for every category, under **Expense Categories** and **Income Categories**
 
 ---
@@ -419,7 +421,7 @@ Nine budget-specific reports are available in the **Budget** category of the [Re
 | **Budget Health Score** | Get a 0--100 health score for your budget with detailed per-category impact analysis |
 | **Seasonal Spending Patterns** | Discover seasonal trends and high-spending months across your budget categories |
 | **Budget Trend** | Line chart showing total budgeted vs total actual spending over 6--12 months to track improvement |
-| **Category Performance** | Table showing each category's budget performance over multiple months with trend indicators |
+| **Category Performance** | Table showing each category's budget performance over multiple months. A rise from −20% to +10% is marked **Up**, and a fall from −20% to −40% is marked **Down** |
 | **Savings Rate** | Track your savings rate (income minus expenses divided by income) over time vs your target. Without an income category in the budget, income is every deposit of the month, each line of a split on its own, leaving out transfers and investment trades |
 | **Health Score History** | Line chart of monthly budget health scores showing your financial trajectory over time |
 | **Flex Group Analysis** | Stacked bar chart for each flex group showing component categories with group limit reference |

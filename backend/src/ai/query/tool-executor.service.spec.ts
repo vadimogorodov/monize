@@ -340,8 +340,12 @@ describe("ToolExecutorService", () => {
         totalIncome: 5000,
         remaining: 1800,
         percentUsed: 40,
+        knownTotalSpent: 1200,
+        valuationComplete: true,
+        missingRatePairs: [],
         overBudgetCategories: [],
         nearLimitCategories: [],
+        incompleteCategories: [],
         categoryCount: 5,
       }),
     };
@@ -1432,6 +1436,24 @@ describe("ToolExecutorService", () => {
       expect(result.summary).not.toContain("Cash flow: incoming");
     });
 
+    it("prints the known difference when net expenses start below zero", async () => {
+      analytics.getLlmPeriodComparison.mockResolvedValueOnce({
+        period1: { total: -20, knownSubtotal: -20 },
+        period2: { total: 10, knownSubtotal: 10 },
+        totalChange: 30,
+        totalChangePercent: null,
+        totalsCurrency: "USD",
+        fxComplete: true,
+        missingRatePairs: [],
+        comparison: [],
+      });
+      const result = await service.execute(userId, "compare_periods", {});
+      expect(result.summary).toContain(
+        "Change: +30.00 USD (percentage undefined",
+      );
+      expect(result.summary).not.toContain("no exchange rate");
+    });
+
     it("compare_periods names the currency of its totals", async () => {
       analytics.getLlmPeriodComparison.mockResolvedValueOnce({
         period1: {
@@ -1694,13 +1716,19 @@ describe("ToolExecutorService", () => {
         unpricedSymbols: ["XYZ"],
         valuationComplete: false,
         totalCashValue: 0,
-        totalHoldingsValue: 100000,
+        totalHoldingsValue: null,
+        knownHoldingsValueSubtotal: 100000,
         totalCostBasis: 130000,
         gainCostBasis: 80000,
         unpricedCostBasis: 50000,
-        totalPortfolioValue: 100000,
-        totalGainLoss: 20000,
-        totalGainLossPercent: 25,
+        totalPortfolioValue: null,
+        knownPortfolioValueSubtotal: 100000,
+        holdingsValueMissingRatePairs: [],
+        costBasisMissingRatePairs: [],
+        totalGainLoss: null,
+        knownGainLossSubtotal: 20000,
+        totalGainLossPercent: null,
+        knownGainLossPercentSubtotal: 25,
         timeWeightedReturn: null,
         cagr: null,
         holdings: [],
@@ -1713,6 +1741,50 @@ describe("ToolExecutorService", () => {
       expect(result.summary).toContain("priced holdings only");
       expect(result.summary).toContain("XYZ");
       expect(result.summary).toContain("50000.00");
+      // The null totals are named, and the partial is not quoted as a total.
+      expect(result.summary).toContain(
+        "totalHoldingsValue, totalPortfolioValue, totalGainLoss, totalGainLossPercent are null",
+      );
+      expect(result.summary).not.toContain("every total above");
+      expect(result.summary).toContain("known portfolio value (a subtotal");
+      expect(result.summary).toContain("25.00% over the valued holdings");
+    });
+
+    it("get_portfolio_summary names a cost rate, not unpriced holdings, when only the cost rate withholds the gain", async () => {
+      portfolio.getLlmSummary.mockResolvedValueOnce({
+        holdingCount: 1,
+        currency: "EUR",
+        fxComplete: false,
+        missingRatePairs: ["USD->CAD"],
+        pricesComplete: true,
+        unpricedSymbols: [],
+        valuationComplete: false,
+        totalCashValue: 0,
+        totalHoldingsValue: 900,
+        totalCostBasis: null,
+        knownCostBasisSubtotal: 0,
+        gainCostBasis: 0,
+        unpricedCostBasis: 0,
+        totalPortfolioValue: 900,
+        holdingsValueMissingRatePairs: [],
+        costBasisMissingRatePairs: ["USD->CAD"],
+        totalGainLoss: null,
+        knownGainLossSubtotal: 0,
+        totalGainLossPercent: null,
+        knownGainLossPercentSubtotal: 0,
+        timeWeightedReturn: null,
+        cagr: null,
+        holdings: [],
+        holdingsByAccount: [],
+        allocation: [],
+      });
+
+      const result = await service.execute(userId, "get_portfolio_summary", {});
+
+      expect(result.summary).toContain("USD->CAD");
+      expect(result.summary).not.toContain("priced holdings only");
+      expect(result.summary).not.toContain("excluded from it");
+      expect(result.summary).toContain("total portfolio value 900.00");
     });
 
     it("list_investment_transactions delegates to investmentTransactions.getLlmInvestmentTransactions", async () => {
@@ -1890,6 +1962,73 @@ describe("ToolExecutorService", () => {
         undefined,
       );
       expect(result.sources[0].type).toBe("budget");
+    });
+
+    it("get_budget_status says the total is unknown when a rate is missing", async () => {
+      budgetReports.getLlmBudgetStatus.mockResolvedValueOnce({
+        budgetName: "Home",
+        period: { start: "2026-02-01", end: "2026-02-28" },
+        totalBudgeted: 1000,
+        totalSpent: null,
+        knownTotalSpent: 20,
+        percentUsed: null,
+        remaining: null,
+        valuationComplete: false,
+        missingRatePairs: ["QQQ->USD"],
+        overBudgetCategories: [],
+        incompleteCategories: [
+          {
+            category: "Groceries",
+            budgeted: 1000,
+            knownSpent: 20,
+            missingRatePairs: ["QQQ->USD"],
+          },
+        ],
+        healthScore: {
+          score: null,
+          label: null,
+          missingRatePairs: ["QQQ->USD"],
+        },
+      } as never);
+
+      const result = await service.execute(userId, "get_budget_status", {});
+
+      expect(result.summary).toContain("total spent unknown");
+      expect(result.summary).toContain("QQQ->USD");
+      expect(result.summary).not.toContain("% used");
+      expect(result.summary).toContain("1 categories with unknown figures");
+      expect(result.summary).toContain("Health score: unknown");
+    });
+
+    it("get_budget_status names both causes of an unknown safe daily spend", async () => {
+      budgetReports.getLlmBudgetStatus.mockResolvedValueOnce({
+        budgetName: "Home",
+        period: { start: "2026-02-01", end: "2026-02-28" },
+        totalBudgeted: 1000,
+        totalSpent: 20,
+        knownTotalSpent: 20,
+        percentUsed: 2,
+        remaining: 980,
+        valuationComplete: true,
+        missingRatePairs: [],
+        overBudgetCategories: [],
+        incompleteCategories: [],
+        velocity: {
+          safeDailySpend: null,
+          upcomingBillsComplete: false,
+          spendingComplete: false,
+          spendingMissingRatePairs: ["QQQ->USD"],
+          daysRemaining: 10,
+        },
+      } as never);
+
+      const result = await service.execute(userId, "get_budget_status", {});
+
+      expect(result.summary).toContain("QQQ->USD");
+      expect(result.summary).toContain(
+        "an upcoming bill's current amount could not be determined",
+      );
+      expect(result.summary).toContain(" and ");
     });
 
     it("list_upcoming_bills delegates to scheduledTransactions.getLlmUpcomingBillsAndDeposits", async () => {
@@ -2154,6 +2293,27 @@ describe("ToolExecutorService", () => {
       expect(result.sources[0].type).toBe("monthly_comparison");
       expect(result.summary).toContain("April 2026 vs March 2026");
       expect(result.summary).not.toContain("withheld");
+    });
+
+    it("names the missing monthly cash-flow rates even when net worth is complete", async () => {
+      const complete = await builtInReports.getMonthlyComparison();
+      const partial = { missingCurrencies: ["JPY"], knownExpenses: 12 };
+      builtInReports.getMonthlyComparison.mockResolvedValueOnce({
+        ...complete,
+        incomeExpenses: { currentPartial: partial },
+        expenses: {
+          currentPartial: partial,
+          previousPartial: { missingCurrencies: ["EUR"] },
+        },
+      });
+      const result = await service.execute(userId, "generate_report", {
+        type: "month_comparison",
+        month: "2026-04",
+      });
+      expect(result.summary).toContain("JPY->USD");
+      expect(result.summary).toContain("EUR->USD");
+      expect(result.summary.match(/JPY->USD/g)).toHaveLength(1);
+      expect(result.summary).not.toContain("Net worth is withheld");
     });
 
     it("month_comparison says net worth is withheld for an incomplete month and names the pairs", async () => {
