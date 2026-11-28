@@ -1,3 +1,5 @@
+import { ComparisonReportsService } from "@/built-in-reports/comparison-reports.service";
+import { Account, AccountType } from "@/accounts/entities/account.entity";
 import { IncomeReportsService } from "@/built-in-reports/income-reports.service";
 import { TaxRecurringReportsService } from "@/built-in-reports/tax-recurring-reports.service";
 import { TestingModule } from "@nestjs/testing";
@@ -22,6 +24,7 @@ describe("signed expenses in Spending by Category (integration)", () => {
   const end = "2026-03-31";
   let module: TestingModule;
   let db: DataSource;
+  let comparison: ComparisonReportsService;
   let tax: TaxRecurringReportsService;
   let income: IncomeReportsService;
   let reports: SpendingReportsService;
@@ -36,6 +39,7 @@ describe("signed expenses in Spending by Category (integration)", () => {
     const currency = new ReportCurrencyService(db, {
       getRateIndex: async () => new Map(),
     } as never);
+    comparison = new ComparisonReportsService(db, currency);
     tax = new TaxRecurringReportsService(db, currency);
     income = new IncomeReportsService(db, currency);
     reports = new SpendingReportsService(db, currency);
@@ -164,6 +168,65 @@ describe("signed expenses in Spending by Category (integration)", () => {
         totalIncome: expected,
         data: [{ categoryId: salary, total: expected, percentage: null }],
       });
+    },
+  );
+
+  it.each([
+    { delta: 75, split: false },
+    { delta: -50, split: false },
+    { delta: -75, split: true },
+  ])(
+    "keeps annual income, expenses and savings after a $delta appraisal (split: $split)",
+    async ({ delta, split }) => {
+      const year = new Date().getFullYear();
+      const transactionDate = `${year}-03-10`;
+      const medical = await createTestCategory(db, userId, { name: "Medical" });
+      const appraisal = await createTestCategory(db, userId, {
+        name: "Appraisal",
+      });
+      const asset = await createTestAccount(db, userId, {
+        name: "House",
+        accountType: AccountType.ASSET,
+      });
+      await db.manager.update(Account, asset.id, {
+        assetCategoryId: appraisal.id,
+      });
+      await post(120, { categoryId: salary, transactionDate });
+      if (split) {
+        const parent = await post(delta - 30, {
+          accountId: asset.id,
+          categoryId: null,
+          isSplit: true,
+          transactionDate,
+        });
+        await db.manager.save(TransactionSplit, [
+          { transactionId: parent.id, categoryId: medical.id, amount: -30 },
+          { transactionId: parent.id, categoryId: appraisal.id, amount: delta },
+        ]);
+      } else {
+        await post(-30, { categoryId: medical.id, transactionDate });
+        await post(delta, {
+          accountId: asset.id,
+          categoryId: appraisal.id,
+          transactionDate,
+        });
+      }
+
+      const annual = await withUserContext(userId, () =>
+        comparison.getYearOverYear(userId, 1),
+      );
+      const expected = { income: 120, expenses: 30, savings: 90 };
+      expect(annual.data[0].totals).toMatchObject(expected);
+      expect(annual.data[0].months[2]).toMatchObject({ month: 3, ...expected });
+      const taxSummary = await withUserContext(userId, () =>
+        tax.getTaxSummary(userId, year),
+      );
+      expect(taxSummary.totals).toMatchObject({
+        income: 120,
+        expenses: 30,
+        deductible: 30,
+      });
+      expect(taxSummary.allExpenses).toEqual([{ name: "Medical", total: 30 }]);
     },
   );
 

@@ -1,3 +1,4 @@
+import { assetValueChangeExclusionSql } from "../common/asset-value-change-filter.util";
 import { Injectable } from "@nestjs/common";
 import { DataSource } from "typeorm";
 import { withScopedDb } from "../common/db/scoped-db";
@@ -172,6 +173,7 @@ export class TaxRecurringReportsService {
         AND (t.status IS NULL OR t.status != 'VOID')
         AND t.parent_transaction_id IS NULL
         AND ${INVESTMENT_EXCLUSION}
+        AND ${assetValueChangeExclusionSql("t", "ts")}
         AND (ts.transfer_account_id IS NULL OR ts.id IS NULL)
     `;
 
