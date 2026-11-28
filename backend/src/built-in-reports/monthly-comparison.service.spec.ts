@@ -849,6 +849,54 @@ describe("MonthlyComparisonService", () => {
       expect(result.netWorth.netWorthChangePercent).toBe(99.99);
     });
 
+    it("preserves the monetary change when the expense baseline is a net refund", async () => {
+      mockIncomeReports.getIncomeVsExpensesWithAggregates
+        .mockResolvedValueOnce(incomeMonth("2026-01", [], [10]))
+        .mockResolvedValueOnce(incomeMonth("2025-12", [], [-20]));
+      const { incomeExpenses } = await service.getMonthlyComparison(
+        mockUserId,
+        mockMonth,
+      );
+      expect(incomeExpenses).toMatchObject({
+        currentExpenses: 10,
+        previousExpenses: -20,
+        expensesChange: 30,
+        expensesChangePercent: null,
+      });
+    });
+
+    it.each([true, false])(
+      "withholds changes when one month is partial (current: %s)",
+      async (current) => {
+        const left = incomeMonth("2026-01", [], [12]);
+        const right = incomeMonth("2025-12", [], [20]);
+        const partial = current ? left : right;
+        Object.assign(partial.response, {
+          missingCurrencies: ["JPY"],
+          excludedCount: 1,
+        });
+        mockIncomeReports.getIncomeVsExpensesWithAggregates
+          .mockResolvedValueOnce(left)
+          .mockResolvedValueOnce(right);
+        const { incomeExpenses, notes } = await service.getMonthlyComparison(
+          mockUserId,
+          mockMonth,
+        );
+        expect(incomeExpenses).toMatchObject({
+          currentExpenses: current ? null : 12,
+          previousExpenses: current ? 20 : null,
+          [current ? "currentPartial" : "previousPartial"]: {
+            missingCurrencies: ["JPY"],
+            knownExpenses: current ? 12 : 20,
+          },
+          expensesChange: null,
+          expensesChangePercent: null,
+          savingsChange: null,
+        });
+        expect(notes).toEqual({ incomeNote: null, savingsNote: null });
+      },
+    );
+
     it("works a percent change out from the unrounded values", async () => {
       // 0.026 against 0.014 read 0.03 and 0.01: 200% from the readings,
       // 85.71% exactly.

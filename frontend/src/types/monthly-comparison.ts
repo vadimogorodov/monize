@@ -6,31 +6,47 @@ export interface CategorySpendingComparisonItem {
   color: string | null;
   currentTotal: number;
   previousTotal: number;
-  change: number;
+  change: number | null;
   /** Undefined as a percentage when new net refunds have no spending baseline. */
   changePercent: number | null;
+}
+
+export interface PartialMonthFlows {
+  missingCurrencies: string[];
+  knownIncome: number;
+  knownExpenses: number;
+  knownSavings: number;
+}
+
+export interface PartialMonthSpending {
+  missingCurrencies: string[];
+  knownSpending: number;
 }
 
 export interface MonthlyComparisonIncomeExpenses {
   currentMonth: string;
   previousMonth: string;
-  currentIncome: number;
-  previousIncome: number;
-  incomeChange: number;
-  incomeChangePercent: number;
-  currentExpenses: number;
-  previousExpenses: number;
-  expensesChange: number;
-  expensesChangePercent: number;
-  currentSavings: number;
-  previousSavings: number;
-  savingsChange: number;
-  savingsChangePercent: number;
+  currentIncome: number | null;
+  previousIncome: number | null;
+  incomeChange: number | null;
+  incomeChangePercent: number | null;
+  currentExpenses: number | null;
+  previousExpenses: number | null;
+  expensesChange: number | null;
+  expensesChangePercent: number | null;
+  currentSavings: number | null;
+  previousSavings: number | null;
+  savingsChange: number | null;
+  savingsChangePercent: number | null;
+
+  currentPartial?: PartialMonthFlows;
+
+  previousPartial?: PartialMonthFlows;
 }
 
 export interface MonthlyComparisonNotes {
-  savingsNote: string;
-  incomeNote: string;
+  savingsNote: string | null;
+  incomeNote: string | null;
 }
 
 export interface CategorySpendingSnapshot {
@@ -46,8 +62,12 @@ export interface MonthlyComparisonExpenses {
   currentMonth: CategorySpendingSnapshot[];
   previousMonth: CategorySpendingSnapshot[];
   comparison: CategorySpendingComparisonItem[];
-  currentTotal: number;
-  previousTotal: number;
+  currentTotal: number | null;
+  previousTotal: number | null;
+
+  currentPartial?: PartialMonthSpending;
+
+  previousPartial?: PartialMonthSpending;
 }
 
 export interface TopCategoriesComparison {
