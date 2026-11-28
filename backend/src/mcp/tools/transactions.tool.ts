@@ -367,9 +367,9 @@ export class McpTransactionsTools {
           const rows = await this.transactionsService.getLlmTransactionRows(
             user.userId,
             {
-              accountId: resolved.accountIds?.[0],
-              categoryId: resolved.categoryIds?.[0],
-              payeeId: resolved.payeeIds?.[0],
+              accountIds: resolved.accountIds,
+              categoryIds: resolved.categoryIds,
+              payeeIds: resolved.payeeIds,
               startDate,
               endDate,
               query: args.searchText,

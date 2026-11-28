@@ -10480,7 +10480,7 @@ describe("TransactionsService", () => {
       ]);
 
       const result = await service.getLlmTransactionRows("user-1", {
-        categoryId: "biz-cell",
+        categoryIds: ["biz-cell"],
       });
 
       expect(result.transactions).toHaveLength(3);
@@ -10929,11 +10929,11 @@ describe("TransactionsService", () => {
       } as any);
 
       await service.getLlmTransactionRows("user-1", {
-        accountId: "a1",
+        accountIds: ["a1"],
         startDate: "2025-01-01",
         endDate: "2025-01-31",
-        categoryId: "c1",
-        payeeId: "p1",
+        categoryIds: ["c1"],
+        payeeIds: ["p1"],
         query: "q",
         limit: 999,
         minAmount: 25,
@@ -10971,7 +10971,7 @@ describe("TransactionsService", () => {
       } as any);
 
       await service.getLlmTransactionRows("user-1", {
-        accountId: "a1",
+        accountIds: ["a1"],
         startDate: "2025-01-01",
         endDate: "2025-01-31",
         sortDirection: "asc",

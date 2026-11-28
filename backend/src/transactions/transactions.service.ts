@@ -5666,9 +5666,9 @@ export class TransactionsService {
   async getLlmTransactionRows(
     userId: string,
     filters: {
-      accountId?: string;
-      categoryId?: string;
-      payeeId?: string;
+      accountIds?: string[];
+      categoryIds?: string[];
+      payeeIds?: string[];
       startDate?: string;
       endDate?: string;
       query?: string;
@@ -5691,11 +5691,11 @@ export class TransactionsService {
     // from the parent total) so a split row outside the range is not shown.
     const result = await this.findAll(
       userId,
-      filters.accountId ? [filters.accountId] : undefined,
+      filters.accountIds,
       filters.startDate,
       filters.endDate,
-      filters.categoryId ? [filters.categoryId] : undefined,
-      filters.payeeId ? [filters.payeeId] : undefined,
+      filters.categoryIds,
+      filters.payeeIds,
       1,
       limit,
       false,

@@ -605,9 +605,9 @@ export class ToolExecutorService {
       const rows = await this.transactionsService.getLlmTransactionRows(
         userId,
         {
-          accountId: accountIds?.[0],
-          categoryId: categoryIds?.[0],
-          payeeId: payeeIds?.[0],
+          accountIds,
+          categoryIds,
+          payeeIds,
           startDate,
           endDate,
           query: searchText,
