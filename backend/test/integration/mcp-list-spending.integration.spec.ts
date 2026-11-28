@@ -5,6 +5,7 @@ import { DataSource } from "typeorm";
 import { withUserContext } from "@/common/db/with-context";
 import { McpTransactionsTools } from "@/mcp/tools/transactions.tool";
 import { mcpTestCtx } from "@/mcp/testing/mcp-test-context";
+import { PayeesService } from "@/payees/payees.service";
 import { SharedReviewService } from "@/shared-expenses/shared-review.service";
 import { Transaction } from "@/transactions/entities/transaction.entity";
 import { TransactionSplit } from "@/transactions/entities/transaction-split.entity";
@@ -42,14 +43,12 @@ describe("list_transactions grouped spending through MCP (USD)", () => {
       providers: [
         McpTransactionsTools,
         ToolExecutorService,
-        {
-          provide: AccountsService,
-          useValue: { resolveAccountFilter: async () => ({}) },
-        },
-        {
-          provide: TransactionAnalyticsService,
-          useValue: new TransactionAnalyticsService(db),
-        },
+        ...[
+          AccountsService,
+          PayeesService,
+          TransactionAnalyticsService,
+          TransactionsService,
+        ].map((provide) => ({ provide, useValue: module.get(provide) })),
         { provide: SharedReviewService, useValue: new SharedReviewService(db) },
       ],
     })
@@ -71,8 +70,12 @@ describe("list_transactions grouped spending through MCP (USD)", () => {
       "users",
     ]);
     userId = (await createTestUserDirect(db)).id;
-    accountId = (await createTestAccount(db, userId, { currencyCode: "USD" }))
-      .id;
+    accountId = (
+      await createTestAccount(db, userId, {
+        name: "Checking",
+        currencyCode: "USD",
+      })
+    ).id;
     await db.manager.save(UserPreference, { userId, defaultCurrency: "USD" });
     categoryId = (await createTestCategory(db, userId, { name: "Groceries" }))
       .id;
@@ -114,6 +117,91 @@ describe("list_transactions grouped spending through MCP (USD)", () => {
     expect(result).not.toHaveProperty("isError", true);
     return config.outputSchema.parse(result.structuredContent);
   }
+
+  it.each([
+    ["categoryNames", "Groceries", "Books"],
+    ["accountNames", "Checking", "Cash"],
+    ["payeeNames", "Shop", "Bookstore"],
+  ] as const)(
+    "applies every %s selection to detail rows and their count",
+    async (field, first, second) => {
+      const purchase = await post(-25);
+      const book = await post(-10, {
+        transactionDate: "2026-11-02",
+        categoryId: (await createTestCategory(db, userId, { name: "Books" }))
+          .id,
+        accountId: (
+          await createTestAccount(db, userId, {
+            name: "Cash",
+            currencyCode: "USD",
+          })
+        ).id,
+        payeeId: (await createTestPayee(db, userId, { name: "Bookstore" })).id,
+      });
+      await post(-90, {
+        categoryId: (
+          await createTestCategory(db, userId, { name: "Other expense" })
+        ).id,
+        accountId: (
+          await createTestAccount(db, userId, {
+            name: "Other account",
+            currencyCode: "USD",
+          })
+        ).id,
+        payeeId: (await createTestPayee(db, userId, { name: "Other shop" })).id,
+      });
+      const filters = {
+        includeTransactions: true,
+        sortBy: "date",
+        sortDirection: "asc",
+      };
+      const expectedRows = [
+        { id: purchase.id, amount: -25 },
+        { id: book.id, amount: -10 },
+      ];
+      for (const names of [
+        [first, second],
+        [second, first],
+      ]) {
+        const args = { ...filters, [field]: names };
+        const expected = {
+          totalExpenses: 35,
+          total: 2,
+          hasMore: false,
+          truncatedTransactionList: false,
+          transactions: expectedRows,
+        };
+        expect(await list("outgoing", "month", args)).toMatchObject(expected);
+        const ai = await withUserContext(userId, () =>
+          tools.get(ToolExecutorService).execute(userId, "list_transactions", {
+            startDate,
+            endDate,
+            direction: "outgoing",
+            groupBy: "month",
+            ...args,
+          }),
+        );
+        expect(ai.data).toMatchObject(expected);
+        expect(
+          await list("outgoing", "month", { ...args, limit: 1 }),
+        ).toMatchObject({
+          totalExpenses: 35,
+          total: 2,
+          hasMore: true,
+          truncatedTransactionList: true,
+          transactions: [expectedRows[0]],
+        });
+      }
+      expect(
+        await list("outgoing", "month", { ...filters, [field]: [second] }),
+      ).toMatchObject({
+        totalExpenses: 10,
+        total: 1,
+        hasMore: false,
+        transactions: [expectedRows[1]],
+      });
+    },
+  );
 
   it.each([30, 100, 150])(
     "nets a %i USD refund in every grouping and keeps cash flows separate",
