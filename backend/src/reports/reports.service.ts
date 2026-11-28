@@ -983,6 +983,19 @@ export class ReportsService {
     }>,
     textSearches: Map<string, ParsedSearch | undefined>,
   ): void {
+    // A posting may satisfy different AND groups with different tags. Keep
+    // the joined tags for the result rows, and test membership on the same
+    // posting independently of which matching tag is currently hydrated.
+    const tagGroups = filterGroups
+      .map((group) =>
+        (group.conditions ?? [])
+          .filter((condition) => condition.field === "tag")
+          .flatMap((condition) => condition.value)
+          .filter(Boolean),
+      )
+      .filter((ids) => ids.length > 0);
+    const joinedTagIds = [...new Set(tagGroups.flat())];
+
     for (let gi = 0; gi < filterGroups.length; gi++) {
       const group = filterGroups[gi];
       if (!group.conditions || group.conditions.length === 0) continue;
@@ -1060,31 +1073,24 @@ export class ReportsService {
                 const values = Array.isArray(condition.value)
                   ? condition.value
                   : [condition.value];
-                if (values.length === 1) {
-                  qb[method](
-                    new Brackets((inner) => {
-                      inner
-                        .where(`tags.id = :${param}`, {
-                          [param]: values[0],
-                        })
-                        .orWhere(`splitTags.id = :${param}`, {
-                          [param]: values[0],
-                        });
-                    }),
-                  );
-                } else if (values.length > 1) {
-                  qb[method](
-                    new Brackets((inner) => {
-                      inner
-                        .where(`tags.id IN (:...${param})`, {
-                          [param]: values,
-                        })
-                        .orWhere(`splitTags.id IN (:...${param})`, {
-                          [param]: values,
-                        });
-                    }),
-                  );
+                if (!values.length) break;
+                const matchesJoined = (ids: string) =>
+                  `(tags.id IN (:...${ids}) OR splitTags.id IN (:...${ids}))`;
+                if (tagGroups.length < 2) {
+                  qb[method](matchesJoined(param), { [param]: values });
+                  break;
                 }
+                qb[method](
+                  `(${matchesJoined("reportJoinedTagIds")} AND (
+                    EXISTS (SELECT 1 FROM transaction_tags ttag
+                            WHERE ttag.transaction_id = transaction.id
+                              AND ttag.tag_id IN (:...${param}))
+                    OR EXISTS (SELECT 1 FROM transaction_split_tags stag
+                               WHERE stag.transaction_split_id = splits.id
+                                 AND stag.tag_id IN (:...${param}))
+                  ))`,
+                  { [param]: values, reportJoinedTagIds: joinedTagIds },
+                );
                 break;
               }
               case "text": {
