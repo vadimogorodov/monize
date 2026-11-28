@@ -344,6 +344,8 @@ The **Filters (optional)** section narrows the report to the transactions you ca
 3. Click **Add OR condition** to add another condition to the same group: a transaction matches the group if it matches any of its conditions
 4. Click **Add AND group** to add another group: a transaction must match every group
 
+To require two tags, put each tag in its own group. Both must apply to the same posting. A split line can use its own tags and tags on the parent transaction. Tags on two different split lines do not satisfy the intersection.
+
 For example, one group with *Category = Restaurants* OR *Category = Coffee Shops*, AND a second group with *Account = Visa Rewards*, reports dining out paid with that card.
 
 ![A filter group in the custom report builder](images/report-filter-builder.png)
