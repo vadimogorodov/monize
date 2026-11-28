@@ -4169,8 +4169,13 @@ describe("TransactionAnalyticsService", () => {
       expect(result.period2.knownSubtotal).toBe(4000);
       expect(result.totalChange).toBeNull();
       expect(result.totalChangePercent).toBeNull();
-      // The row still shows what converted, never the foreign amount as is.
-      expect(result.comparison[0].period2Amount).toBe(4000);
+      expect(result.comparison[0]).toMatchObject({
+        period1Amount: 400,
+        period2Amount: null,
+        period2KnownSubtotal: 4000,
+        change: null,
+        changePercent: null,
+      });
     });
 
     it("does not price a date with a rate struck after it", async () => {

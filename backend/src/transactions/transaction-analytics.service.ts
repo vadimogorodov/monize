@@ -343,12 +343,14 @@ export interface LlmPeriodComparisonResult {
   totalsCurrency: string;
   fxComplete: boolean;
   missingRatePairs: string[];
-  /** Each row's amounts are the rows that converted (see `fxComplete`). */
+  /** Incomplete row amounts are null; their known converted parts are separate. */
   comparison: Array<{
     label: string;
-    period1Amount: number;
-    period2Amount: number;
-    change: number;
+    period1Amount: number | null;
+    period2Amount: number | null;
+    period1KnownSubtotal?: number;
+    period2KnownSubtotal?: number;
+    change: number | null;
     changePercent: number | null;
   }>;
 }
@@ -2737,7 +2739,6 @@ export class TransactionAnalyticsService {
 
     const noSpendingBase = (base: FxAggregate, current: FxAggregate) =>
       direction === "expenses" &&
-      groupBy === "category" &&
       (base.sign < 0 ||
         (base.knownSubtotalAt(places) === 0 && current.sign < 0));
 
@@ -2745,27 +2746,38 @@ export class TransactionAnalyticsService {
       const p1 = p1Map.get(label) ?? none;
       const p2 = p2Map.get(label) ?? none;
       const difference = FxAggregate.difference(p2, p1);
-      const p1Amount = p1.knownSubtotalAt(places);
-      const p2Amount = p2.knownSubtotalAt(places);
-      const change = difference.knownSubtotalAt(places);
-      const changePercent = noSpendingBase(p1, p2)
-        ? null
-        : p1Amount !== 0
-          ? percentOf(difference, p1)
-          : p2Amount !== 0
-            ? 100
-            : 0;
+      const p1Amount = p1.totalAt(places);
+      const p2Amount = p2.totalAt(places);
+      const change = difference.totalAt(places);
+      const changePercent =
+        change === null || noSpendingBase(p1, p2)
+          ? null
+          : p1Amount !== 0
+            ? percentOf(difference, p1)
+            : p2Amount !== 0
+              ? 100
+              : 0;
 
       return {
         label,
         period1Amount: p1Amount,
         period2Amount: p2Amount,
+        ...(p1Amount === null && {
+          period1KnownSubtotal: p1.knownSubtotalAt(places),
+        }),
+        ...(p2Amount === null && {
+          period2KnownSubtotal: p2.knownSubtotalAt(places),
+        }),
         change,
         changePercent,
       };
     });
 
-    comparison.sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+    comparison.sort((a, b) => {
+      if (a.change === null) return b.change === null ? 0 : 1;
+      if (b.change === null) return -1;
+      return Math.abs(b.change) - Math.abs(a.change);
+    });
 
     const both = new FxAggregate();
     both.merge(period1.total);
@@ -2836,6 +2848,7 @@ export class TransactionAnalyticsService {
 
       joinSplitsForAnalytics(qb);
       applyInvestmentTransactionFilters(qb, "periodAccount", "t");
+      qb.andWhere(investmentLinkedSplitExclusion("ts"));
 
       // Expenses are the signed sum over rows of both signs, negated, so a
       // refund in a category reduces what was spent there instead of being
@@ -2853,11 +2866,19 @@ export class TransactionAnalyticsService {
         amountExpr = `ABS(${SPLIT_AMOUNT})`;
       }
 
+      const payeeExpenses = groupBy === "payee" && direction === "expenses";
       if (groupBy === "payee") {
         qb.select("COALESCE(t.payeeName, 'Unknown')", "label")
           .addSelect(`SUM(${amountExpr})`, "total")
           .addSelect("COUNT(*)", "count")
           .groupBy("t.payeeName");
+        if (payeeExpenses) {
+          const splitParent = "CASE WHEN ts.id IS NOT NULL THEN t.id END";
+          qb.addSelect(`${SPLIT_CATEGORY_ID}::text`, "categoryId")
+            .addGroupBy(`${SPLIT_CATEGORY_ID}::text`)
+            .addSelect(splitParent, "splitParent")
+            .addGroupBy(splitParent);
+        }
       } else {
         // Same rule as the grouped breakdown: identity is the category id, and
         // the label carries the parent so a comparison never puts two different
@@ -2886,12 +2907,14 @@ export class TransactionAnalyticsService {
         endDate,
       );
       const categories =
-        groupBy === "category"
+        groupBy === "category" || payeeExpenses
           ? await this.loadReportCategories(m, userId)
           : undefined;
+      const categoryKey = (row: RawGroupRow) => row.categoryId ?? "";
+      const payeeKey = (row: RawGroupRow) => row.label;
       let groups = this.foldGroups(
         rows,
-        (r) => (groupBy === "payee" ? r.label : (r.categoryId ?? "")),
+        groupBy === "payee" && !payeeExpenses ? payeeKey : categoryKey,
         reporting,
         rates,
       );
@@ -2904,6 +2927,22 @@ export class TransactionAnalyticsService {
               categories?.typeById.get(g.first.categoryId),
             ),
         );
+        if (payeeExpenses) {
+          // Select the same spending categories before attributing their rows
+          // to payees. Several qualifying lines of one split count as one
+          // transaction towards disclosure of its payee.
+          const included = new Set(groups.map((g) => categoryKey(g.first)));
+          const parents = new Set<string>();
+          const eligible = rows
+            .filter((row) => included.has(categoryKey(row)))
+            .map((row) => {
+              if (!row.splitParent) return row;
+              const count = parents.has(row.splitParent) ? 0 : 1;
+              parents.add(row.splitParent);
+              return { ...row, count };
+            });
+          groups = this.foldGroups(eligible, payeeKey, reporting, rates);
+        }
       }
       let items: ComparisonItem[] = groups.map((g) => ({
         label:

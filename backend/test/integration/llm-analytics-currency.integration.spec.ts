@@ -205,15 +205,45 @@ describe("LLM analytics currency (integration)", () => {
   });
 
   describe("with no USD->PLN rate", () => {
-    it("withholds the period totals and names the pair", async () => {
+    it("withholds incomplete row changes and keeps a fully priced sibling", async () => {
+      const sibling = await createTestCategory(dataSource, userId, {
+        name: "Local",
+      });
+      await insertTransaction({
+        categoryId: sibling.id,
+        amount: -7,
+        transactionDate: AUG.start,
+      });
+      await insertTransaction({
+        categoryId: sibling.id,
+        amount: -9,
+        transactionDate: SEP.start,
+      });
       const result = await compare();
 
       expect(result.totalsCurrency).toBe("PLN");
       expect(result.fxComplete).toBe(false);
       expect(result.missingRatePairs).toEqual(["USD->PLN"]);
-      expect(result.period1.total).toBe(400);
+      expect(result.period1.total).toBe(407);
       expect(result.period2.total).toBeNull();
-      expect(result.period2.knownSubtotal).toBe(4000);
+      expect(result.period2.knownSubtotal).toBe(4009);
+      expect(result.comparison).toMatchObject([
+        {
+          label: "Local",
+          period1Amount: 7,
+          period2Amount: 9,
+          change: 2,
+          changePercent: 28.57,
+        },
+        {
+          label: "Groceries",
+          period1Amount: 400,
+          period2Amount: null,
+          period2KnownSubtotal: 4000,
+          change: null,
+          changePercent: null,
+        },
+      ]);
       expect(result.totalChange).toBeNull();
       expect(result.totalChangePercent).toBeNull();
     });

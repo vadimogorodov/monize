@@ -1436,6 +1436,24 @@ describe("ToolExecutorService", () => {
       expect(result.summary).not.toContain("Cash flow: incoming");
     });
 
+    it("prints the known difference when net expenses start below zero", async () => {
+      analytics.getLlmPeriodComparison.mockResolvedValueOnce({
+        period1: { total: -20, knownSubtotal: -20 },
+        period2: { total: 10, knownSubtotal: 10 },
+        totalChange: 30,
+        totalChangePercent: null,
+        totalsCurrency: "USD",
+        fxComplete: true,
+        missingRatePairs: [],
+        comparison: [],
+      });
+      const result = await service.execute(userId, "compare_periods", {});
+      expect(result.summary).toContain(
+        "Change: +30.00 USD (percentage undefined",
+      );
+      expect(result.summary).not.toContain("no exchange rate");
+    });
+
     it("compare_periods names the currency of its totals", async () => {
       analytics.getLlmPeriodComparison.mockResolvedValueOnce({
         period1: {
