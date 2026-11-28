@@ -255,6 +255,10 @@ the wire; stage 2 removes the one-cent double rounding.
   the cash band is the invested value the daily series reports for the day);
   and the assistant's and MCP's
   report tools: `generate_report` hands out the reports' own figures, and the
+  comparison rows with a missing rate expose the converted part separately
+  and withhold the full amount, difference and percentage for that row. A
+  fully priced net expense comparison starting in credit keeps its money
+  difference and omits the percentage, for either category or payee. The
   flow totals, the grouped breakdown and `compare_periods` read at the
   reporting currency's places, the summary lines of `compare_periods`,
   `list_transactions` and `get_portfolio_summary` printing them at those
