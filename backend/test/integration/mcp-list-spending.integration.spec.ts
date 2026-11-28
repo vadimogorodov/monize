@@ -129,6 +129,7 @@ describe("list_transactions grouped spending through MCP (USD)", () => {
     async (field, first, second) => {
       const purchase = await post(-25);
       const book = await post(-10, {
+        transactionDate: "2026-11-02",
         categoryId: (await createTestCategory(db, userId, { name: "Books" }))
           .id,
         accountId: (
@@ -153,7 +154,7 @@ describe("list_transactions grouped spending through MCP (USD)", () => {
       });
       const filters = {
         includeTransactions: true,
-        sortBy: "amount",
+        sortBy: "date",
         sortDirection: "asc",
       };
       const expectedRows = [
